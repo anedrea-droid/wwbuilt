@@ -3,8 +3,9 @@ import { getPool, toPart } from '@/lib/db'
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const pool = getPool()
   try {
     const body = await req.json()
@@ -12,11 +13,7 @@ export async function PATCH(
     const values: unknown[] = []
     let idx = 1
 
-    const allowed = [
-      'name', 'part_number', 'supplier', 'quantity',
-      'status', 'date_ordered', 'date_received',
-      'cost', 'price', 'notes',
-    ]
+    const allowed = ['name','part_number','supplier','quantity','status','date_ordered','date_received','cost','price','notes']
 
     for (const key of allowed) {
       if (body[key] !== undefined) {
@@ -28,7 +25,7 @@ export async function PATCH(
     if (fields.length === 0)
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
 
-    values.push(params.id)
+    values.push(id)
     const { rows } = await pool.query(
       `UPDATE parts SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
@@ -44,11 +41,12 @@ export async function PATCH(
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const pool = getPool()
   try {
-    await pool.query('DELETE FROM parts WHERE id = $1', [params.id])
+    await pool.query('DELETE FROM parts WHERE id = $1', [id])
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
