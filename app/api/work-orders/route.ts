@@ -63,7 +63,7 @@ export async function POST(request: Request) {
        (id, order_number, customer_id, equipment_id, status, technician, complaint,
         diagnosis, work_done, labor_hours, labor_rate, date_in, date_complete,
         date_picked_up, notes, payment_method, amount_charged, amount_paid)
-     VALUES ($1,$2,$3,$4,'pending',$5,$6,'','',0,65,$7,'','','$8','',0,0)
+     VALUES ($1,$2,$3,$4,'pending',$5,$6,'','',0,80,$7,'','','$8','',0,0)
      RETURNING *`,
     [id, orderNumber, body.customerId, body.equipmentId,
      body.technician || 'Wade', body.complaint || '', body.dateIn || new Date().toISOString().split('T')[0]]
