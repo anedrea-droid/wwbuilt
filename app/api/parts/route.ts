@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { getPool, toPart } from '@/lib/db'
-import { v4 as uuidv4 } from 'uuid'
 
 export async function GET(req: Request) {
   const pool = getPool()
@@ -20,7 +19,7 @@ export async function POST(req: Request) {
   const pool = getPool()
   try {
     const body = await req.json()
-    const id = uuidv4()
+    const id = crypto.randomUUID()
     const { rows } = await pool.query(
       `INSERT INTO parts
          (id, work_order_id, name, part_number, supplier, quantity,
