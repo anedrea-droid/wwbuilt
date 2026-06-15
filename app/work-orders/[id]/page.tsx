@@ -1,551 +1,399 @@
-"use client"
+'use client'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 
-import { useState, useEffect, useCallback } from "react"
-import { useParams, useRouter } from "next/navigation"
-import Link from "next/link"
-import { format, parseISO } from "date-fns"
-import { ArrowLeft, Edit, Save, X, Plus, Trash, Phone, Package, DollarSign, CheckCircle, Wrench } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
-import type { WorkOrderStatus, TechName, PartStatus } from "@/types"
-
-interface WO {
-  id: string; orderNumber: string; status: WorkOrderStatus; technician: TechName
-  complaint: string; diagnosis: string; workDone: string
-  laborHours: number; laborRate: number
-  dateIn: string; dateComplete: string; datePickedUp: string
-  notes: string; paymentMethod: string; amountCharged: number; amountPaid: number
-  customer?: { id: string; name: string; phone: string; source: string; referralShop: string }
-  equipment?: { id: string; type: string; make: string; model: string; serialNumber: string }
-  parts?: Part[]
+interface WorkOrder {
+  id: string; orderNumber: string; customerId: string; equipmentId: string
+  status: string; technician: string; complaint: string; diagnosis: string
+  workDone: string; laborHours: number; laborRate: number; dateIn: string
+  dateComplete: string; datePickedUp: string; notes: string
+  paymentMethod: string; amountCharged: number; amountPaid: number
 }
+interface Customer { id: string; name: string; phone: string; source: string; referralShop: string }
+interface Equipment { id: string; type: string; make: string; model: string; year: string; serialNumber: string }
 interface Part {
   id: string; name: string; partNumber: string; supplier: string
-  unitCost: number; quantity: number; status: PartStatus
-  dateOrdered: string; dateReceived: string
+  quantity: number; cost: number; price: number
+  status: string; dateOrdered: string; dateReceived: string; notes: string
 }
 
-const STATUS_FLOW: WorkOrderStatus[] = ['pending', 'in-progress', 'waiting-parts', 'complete', 'picked-up']
-const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string; dot: string }> = {
-  'pending':       { label: 'Pending',         cls: 'bg-gray-100 text-gray-700',   dot: 'bg-gray-400' },
-  'in-progress':   { label: 'In Progress',      cls: 'bg-blue-100 text-blue-700',   dot: 'bg-blue-500' },
-  'waiting-parts': { label: 'Waiting Parts',    cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-  'complete':      { label: 'Ready for Pickup', cls: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
-  'picked-up':     { label: 'Picked Up',        cls: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
-}
-const TECH_CFG: Record<string, string> = {
-  'Wade': 'bg-orange-100 text-orange-700', 'Wayne': 'bg-blue-100 text-blue-700', 'Both': 'bg-purple-100 text-purple-700'
+const STATUS_COLORS: Record<string, string> = {
+  pending:    'bg-yellow-100 text-yellow-800',
+  diagnosing: 'bg-blue-100 text-blue-800',
+  waiting:    'bg-orange-100 text-orange-800',
+  'in-progress': 'bg-purple-100 text-purple-800',
+  ready:      'bg-green-100 text-green-800',
+  done:       'bg-gray-100 text-gray-800',
 }
 
 export default function WorkOrderDetail() {
-  const params = useParams()
+  const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const id = params.id as string
-
-  const [wo, setWo] = useState<WO | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [wo, setWo] = useState<WorkOrder | null>(null)
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [equipment, setEquipment] = useState<Equipment | null>(null)
+  const [parts, setParts] = useState<Part[]>([])
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<Partial<WorkOrder>>({})
+  const [showAddPart, setShowAddPart] = useState(false)
+  const [newPart, setNewPart] = useState({
+    name: '', partNumber: '', supplier: '', quantity: 1,
+    cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0],
+  })
   const [saving, setSaving] = useState(false)
 
-  // Edit states
-  const [editJob, setEditJob] = useState(false)
-  const [editPayment, setEditPayment] = useState(false)
-  const [addingPart, setAddingPart] = useState(false)
-
-  // Job edit fields
-  const [diagnosis, setDiagnosis] = useState('')
-  const [workDone, setWorkDone] = useState('')
-  const [laborHours, setLaborHours] = useState('0')
-  const [laborRate, setLaborRate] = useState('65')
-  const [notes, setNotes] = useState('')
-  const [technician, setTechnician] = useState<TechName>('Wade')
-
-  // Payment fields
-  const [amountCharged, setAmountCharged] = useState('0')
-  const [amountPaid, setAmountPaid] = useState('0')
-  const [paymentMethod, setPaymentMethod] = useState('')
-
-  // New part fields
-  const [partName, setPartName] = useState('')
-  const [partNumber, setPartNumber] = useState('')
-  const [partSupplier, setPartSupplier] = useState('')
-  const [partCost, setPartCost] = useState('0')
-  const [partQty, setPartQty] = useState('1')
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/work-orders/${id}`)
-      const data = await res.json()
-      setWo(data)
-      setDiagnosis(data.diagnosis || '')
-      setWorkDone(data.workDone || '')
-      setLaborHours(String(data.laborHours || 0))
-      setLaborRate(String(data.laborRate || 65))
-      setNotes(data.notes || '')
-      setTechnician(data.technician || 'Wade')
-      setAmountCharged(String(data.amountCharged || 0))
-      setAmountPaid(String(data.amountPaid || 0))
-      setPaymentMethod(data.paymentMethod || '')
-    } finally {
-      setLoading(false)
-    }
+  useEffect(() => {
+    fetch(`/api/work-orders/${id}`)
+      .then(r => r.json()).then(data => { setWo(data); setForm(data) })
+    fetch(`/api/parts?workOrderId=${id}`)
+      .then(r => r.json()).then(setParts)
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!wo) return
+    fetch(`/api/customers/${wo.customerId}`).then(r => r.json()).then(setCustomer)
+    fetch(`/api/equipment/${wo.equipmentId}`).then(r => r.json()).then(setEquipment)
+  }, [wo])
 
-  async function updateWO(patch: Record<string, unknown>) {
+  async function saveWorkOrder() {
     setSaving(true)
-    try {
-      const res = await fetch(`/api/work-orders/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch)
-      })
-      const data = await res.json()
-      setWo(data)
-      setDiagnosis(data.diagnosis || '')
-      setWorkDone(data.workDone || '')
-      setLaborHours(String(data.laborHours || 0))
-      setLaborRate(String(data.laborRate || 65))
-      setNotes(data.notes || '')
-      setTechnician(data.technician || 'Wade')
-      setAmountCharged(String(data.amountCharged || 0))
-      setAmountPaid(String(data.amountPaid || 0))
-      setPaymentMethod(data.paymentMethod || '')
-    } finally {
-      setSaving(false)
-      setEditJob(false)
-      setEditPayment(false)
-    }
-  }
-
-  async function updateStatus(status: WorkOrderStatus) {
-    const patch: Record<string, unknown> = { status }
-    if (status === 'complete') patch.dateComplete = new Date().toISOString().split('T')[0]
-    if (status === 'picked-up') patch.datePickedUp = new Date().toISOString().split('T')[0]
-    await updateWO(patch)
+    const res = await fetch(`/api/work-orders/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    })
+    const updated = await res.json()
+    setWo(updated); setForm(updated); setEditing(false); setSaving(false)
   }
 
   async function addPart() {
-    if (!partName.trim()) return
-    setSaving(true)
-    await fetch('/api/parts', {
+    const res = await fetch('/api/parts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        workOrderId: id, name: partName, partNumber, supplier: partSupplier,
-        unitCost: parseFloat(partCost) || 0, quantity: parseInt(partQty) || 1,
-        status: 'ordered', dateOrdered: new Date().toISOString().split('T')[0]
-      })
+      body: JSON.stringify({ ...newPart, workOrderId: id }),
     })
-    setPartName(''); setPartNumber(''); setPartSupplier(''); setPartCost('0'); setPartQty('1')
-    setAddingPart(false)
-    await load()
-    setSaving(false)
+    const part = await res.json()
+    setParts(p => [...p, part])
+    setNewPart({ name: '', partNumber: '', supplier: '', quantity: 1, cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0] })
+    setShowAddPart(false)
   }
 
-  async function togglePartStatus(part: Part) {
-    const newStatus: PartStatus = part.status === 'ordered' ? 'received' : 'ordered'
-    const patch: Record<string, unknown> = { status: newStatus }
-    if (newStatus === 'received') patch.dateReceived = new Date().toISOString().split('T')[0]
-    await fetch(`/api/parts/${part.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch)
+  async function markReceived(partId: string) {
+    const today = new Date().toISOString().split('T')[0]
+    const res = await fetch(`/api/parts/${partId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'received', date_received: today }),
     })
-    await load()
+    const updated = await res.json()
+    setParts(p => p.map(x => x.id === partId ? updated : x))
   }
 
   async function deletePart(partId: string) {
+    if (!confirm('Delete this part?')) return
     await fetch(`/api/parts/${partId}`, { method: 'DELETE' })
-    await load()
+    setParts(p => p.filter(x => x.id !== partId))
   }
 
-  async function deleteWO() {
-    if (!confirm('Delete this work order?')) return
+  async function deleteWorkOrder() {
+    if (!confirm('Delete this work order? This cannot be undone.')) return
     await fetch(`/api/work-orders/${id}`, { method: 'DELETE' })
     router.push('/')
   }
 
-  if (loading) return (
-    <div className="max-w-2xl mx-auto px-3 pt-4 space-y-4">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-48 w-full" />
+  if (!wo) return <div className="p-8 text-gray-500">Loading…</div>
+
+  const field = (label: string, key: keyof WorkOrder, type = 'text') => (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      {editing ? (
+        <input
+          type={type}
+          value={String(form[key] ?? '')}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          className="w-full border rounded px-2 py-1 text-sm"
+        />
+      ) : (
+        <p className="text-sm text-gray-800">{String(wo[key] || '—')}</p>
+      )}
     </div>
   )
 
-  if (!wo) return (
-    <div className="max-w-2xl mx-auto px-3 pt-4 text-center py-12">
-      <p className="text-slate-500">Work order not found.</p>
-      <Link href="/" className="text-orange-600 underline mt-2 inline-block">Back to Jobs</Link>
+  const textarea = (label: string, key: keyof WorkOrder) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      {editing ? (
+        <textarea
+          value={String(form[key] ?? '')}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          rows={3}
+          className="w-full border rounded px-2 py-1 text-sm"
+        />
+      ) : (
+        <p className="text-sm text-gray-800 whitespace-pre-wrap">{String(wo[key] || '—')}</p>
+      )}
     </div>
   )
 
-  const cfg = STATUS_CFG[wo.status]
-  const partsTotal = (wo.parts || []).reduce((sum, p) => sum + p.unitCost * p.quantity, 0)
-  const laborTotal = (wo.laborHours || 0) * (wo.laborRate || 65)
-  const suggestedTotal = laborTotal + partsTotal
-  const orderedParts = (wo.parts || []).filter(p => p.status === 'ordered')
+  const partsTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
+  const laborTotal = (wo.laborHours || 0) * (wo.laborRate || 80)
 
   return (
-    <div className="max-w-2xl mx-auto px-3 pt-4 space-y-4">
+    <div className="max-w-3xl mx-auto p-4 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/" className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <span className="font-mono font-bold text-lg text-slate-800">{wo.orderNumber}</span>
-          <span className={cn("text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1", cfg.cls)}>
-            <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
-            {cfg.label}
-          </span>
+        <div>
+          <Link href="/" className="text-sm text-orange-500 hover:underline">← Work Orders</Link>
+          <h1 className="text-2xl font-bold mt-1">Work Order #{wo.orderNumber}</h1>
         </div>
-        <button onClick={deleteWO} className="p-2 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors">
-          <Trash className="h-4 w-4" />
-        </button>
+        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[wo.status] || 'bg-gray-100 text-gray-700'}`}>
+          {wo.status}
+        </span>
       </div>
 
-      {/* Status Buttons */}
-      {wo.status !== 'picked-up' && (
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">Update Status</p>
-            <div className="flex flex-wrap gap-2">
-              {STATUS_FLOW.filter(s => s !== wo.status).map(s => {
-                const c = STATUS_CFG[s]
-                return (
-                  <button key={s} onClick={() => updateStatus(s)} disabled={saving}
-                    className={cn("px-3 py-1.5 rounded-lg text-sm font-medium border transition-all hover:opacity-80", c.cls, "border-current")}>
-                    → {c.label}
-                  </button>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Customer + Equipment */}
-      <Card>
-        <CardContent className="p-4 space-y-2">
-          {wo.customer && (
-            <Link href={`/customers/${wo.customer.id}`} className="flex items-start justify-between hover:bg-slate-50 -mx-1 px-1 py-1 rounded-lg">
-              <div>
-                <div className="font-semibold text-slate-800">{wo.customer.name}</div>
-                {wo.customer.phone && (
-                  <div className="flex items-center gap-1 text-sm text-slate-500">
-                    <Phone className="h-3.5 w-3.5" />
-                    <a href={`tel:${wo.customer.phone}`} className="hover:text-orange-600">{wo.customer.phone}</a>
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className={cn("text-xs px-2 py-0.5 rounded font-medium", TECH_CFG[wo.technician])}>
-                  {wo.technician}
+      {/* Customer / Equipment */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-gray-700 mb-2">Customer</h2>
+          {customer ? (
+            <>
+              <p className="font-medium">{customer.name}</p>
+              <p className="text-sm text-gray-500">{customer.phone}</p>
+              {customer.source === 'referral' && (
+                <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  Referral: {customer.referralShop}
                 </span>
-                {wo.customer.source === 'referral' && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500">
-                    via {wo.customer.referralShop || 'Other Shop'}
-                  </span>
-                )}
-              </div>
-            </Link>
-          )}
-          {wo.equipment && (
-            <div className="flex items-center gap-2 pt-1 border-t">
-              <Wrench className="h-4 w-4 text-orange-500 flex-shrink-0" />
-              <div>
-                <div className="text-sm font-medium text-slate-700">
-                  {wo.equipment.type} — {wo.equipment.make} {wo.equipment.model}
-                </div>
-                {wo.equipment.serialNumber && (
-                  <div className="text-xs text-slate-400">S/N: {wo.equipment.serialNumber}</div>
-                )}
-              </div>
-            </div>
-          )}
-          <div className="text-xs text-slate-400 pt-1">
-            Date In: {wo.dateIn ? format(parseISO(wo.dateIn + 'T12:00:00'), 'MMMM d, yyyy') : '—'}
-            {wo.dateComplete && ` · Completed: ${format(parseISO(wo.dateComplete + 'T12:00:00'), 'MMM d')}`}
-            {wo.datePickedUp && ` · Picked Up: ${format(parseISO(wo.datePickedUp + 'T12:00:00'), 'MMM d')}`}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Complaint */}
-      {wo.complaint && (
-        <div className="px-1">
-          <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">Customer Complaint</p>
-          <p className="text-slate-700 italic">"{wo.complaint}"</p>
-        </div>
-      )}
-
-      {/* Job Work Section */}
-      <Card>
-        <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Diagnosis &amp; Work Done</CardTitle>
-          {!editJob ? (
-            <Button size="sm" variant="outline" onClick={() => setEditJob(true)}>
-              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-            </Button>
-          ) : (
-            <div className="flex gap-1">
-              <Button size="sm" onClick={() => updateWO({ diagnosis, workDone, laborHours: parseFloat(laborHours)||0, laborRate: parseFloat(laborRate)||65, notes, technician })} disabled={saving} className="bg-orange-600 hover:bg-orange-700">
-                <Save className="h-3.5 w-3.5 mr-1" /> Save
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setEditJob(false)}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-3">
-          {editJob ? (
-            <>
-              <div>
-                <Label className="text-xs">Assigned To</Label>
-                <div className="flex gap-2 mt-1">
-                  {(['Wade', 'Wayne', 'Both'] as const).map(t => (
-                    <button key={t} onClick={() => setTechnician(t)}
-                      className={cn("flex-1 py-1.5 rounded text-sm font-medium border",
-                        technician === t
-                          ? t === 'Wade' ? "bg-orange-600 text-white border-orange-600"
-                            : t === 'Wayne' ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-purple-600 text-white border-purple-600"
-                          : "bg-white text-slate-600 border-slate-200"
-                      )}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">Diagnosis</Label>
-                <Textarea value={diagnosis} onChange={e => setDiagnosis(e.target.value)} rows={2} className="mt-1" placeholder="What did you find?" />
-              </div>
-              <div>
-                <Label className="text-xs">Work Done</Label>
-                <Textarea value={workDone} onChange={e => setWorkDone(e.target.value)} rows={3} className="mt-1" placeholder="What was done to fix it?" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Labor Hours</Label>
-                  <Input type="number" value={laborHours} onChange={e => setLaborHours(e.target.value)} step="0.25" min="0" className="mt-1" />
-                </div>
-                <div>
-                  <Label className="text-xs">Labor Rate ($/hr)</Label>
-                  <Input type="number" value={laborRate} onChange={e => setLaborRate(e.target.value)} min="0" className="mt-1" />
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">Notes</Label>
-                <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="mt-1" placeholder="Internal notes…" />
-              </div>
-            </>
-          ) : (
-            <>
-              <Field label="Diagnosis" value={wo.diagnosis} empty="Not yet noted" />
-              <Field label="Work Done" value={wo.workDone} empty="Not yet noted" />
-              {(wo.laborHours > 0 || wo.laborRate > 0) && (
-                <div className="text-sm text-slate-600">
-                  Labor: {wo.laborHours}h × ${wo.laborRate}/hr = <strong>${laborTotal.toFixed(2)}</strong>
-                </div>
               )}
-              {wo.notes && <Field label="Notes" value={wo.notes} />}
+              <Link href={`/customers/${customer.id}`} className="block text-xs text-orange-500 hover:underline mt-2">
+                View customer →
+              </Link>
             </>
+          ) : <p className="text-sm text-gray-400">Loading…</p>}
+        </div>
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-gray-700 mb-2">Equipment</h2>
+          {equipment ? (
+            <>
+              <p className="font-medium">{equipment.make} {equipment.model}</p>
+              <p className="text-sm text-gray-500">{equipment.year} {equipment.type}</p>
+              {equipment.serialNumber && (
+                <p className="text-xs text-gray-400">S/N: {equipment.serialNumber}</p>
+              )}
+            </>
+          ) : <p className="text-sm text-gray-400">Loading…</p>}
+        </div>
+      </div>
+
+      {/* Work Details */}
+      <div className="bg-white rounded-xl shadow p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">Work Details</h2>
+          {editing ? (
+            <div className="flex gap-2">
+              <button onClick={() => { setEditing(false); setForm(wo) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={saveWorkOrder} disabled={saving} className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)} className="text-sm text-orange-500 hover:underline">Edit</button>
           )}
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Status + Technician */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+            {editing ? (
+              <select
+                value={form.status || ''}
+                onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm"
+              >
+                {['pending','diagnosing','waiting','in-progress','ready','done'].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            ) : <p className="text-sm text-gray-800 capitalize">{wo.status}</p>}
+          </div>
+          {field('Technician', 'technician')}
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          {field('Date In', 'dateIn', 'date')}
+          {field('Date Complete', 'dateComplete', 'date')}
+          {field('Date Picked Up', 'datePickedUp', 'date')}
+        </div>
+
+        {textarea('Complaint / Problem Reported', 'complaint')}
+        {textarea('Diagnosis', 'diagnosis')}
+        {textarea('Work Done', 'workDone')}
+        {textarea('Notes', 'notes')}
+      </div>
 
       {/* Parts */}
-      <Card>
-        <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Package className="h-4 w-4 text-orange-500" />
-            Parts
-            {orderedParts.length > 0 && (
-              <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
-                {orderedParts.length} on order
-              </span>
-            )}
-          </CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setAddingPart(!addingPart)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add Part
-          </Button>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-2">
-          {addingPart && (
-            <div className="p-3 bg-orange-50 rounded-lg border border-orange-200 space-y-2">
-              <p className="text-sm font-semibold text-orange-700">Add Part</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Part Name *</Label>
-                  <Input value={partName} onChange={e => setPartName(e.target.value)} placeholder="Air filter, belt…" />
-                </div>
-                <div>
-                  <Label className="text-xs">Part Number</Label>
-                  <Input value={partNumber} onChange={e => setPartNumber(e.target.value)} placeholder="Optional" />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-2">
-                  <Label className="text-xs">Supplier</Label>
-                  <Input value={partSupplier} onChange={e => setPartSupplier(e.target.value)} placeholder="Where to order" />
-                </div>
-                <div>
-                  <Label className="text-xs">Qty</Label>
-                  <Input type="number" value={partQty} onChange={e => setPartQty(e.target.value)} min="1" />
-                </div>
+      <div className="bg-white rounded-xl shadow p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-gray-700">Parts</h2>
+          <button
+            onClick={() => setShowAddPart(v => !v)}
+            className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600"
+          >
+            + Add Part
+          </button>
+        </div>
+
+        {/* Add Part Form */}
+        {showAddPart && (
+          <div className="border rounded-lg p-3 mb-4 bg-orange-50 space-y-3">
+            <p className="text-sm font-medium text-gray-700">New Part</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-500">Part Name *</label>
+                <input value={newPart.name} onChange={e => setNewPart(p => ({ ...p, name: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="Air filter" />
               </div>
               <div>
-                <Label className="text-xs">Unit Cost ($)</Label>
-                <Input type="number" value={partCost} onChange={e => setPartCost(e.target.value)} step="0.01" min="0" />
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={addPart} disabled={!partName.trim() || saving} className="flex-1 bg-orange-600 hover:bg-orange-700">
-                  Add Part (Ordered)
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setAddingPart(false)} className="flex-1">Cancel</Button>
-              </div>
-            </div>
-          )}
-
-          {!wo.parts?.length && !addingPart ? (
-            <p className="text-sm text-slate-400 italic">No parts yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {wo.parts?.map(p => (
-                <div key={p.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-50 border">
-                  <button onClick={() => togglePartStatus(p)} title={p.status === 'ordered' ? 'Mark received' : 'Mark ordered'}
-                    className={cn("rounded-full p-1 transition-colors flex-shrink-0",
-                      p.status === 'received' ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-amber-100 text-amber-600 hover:bg-amber-200"
-                    )}>
-                    {p.status === 'received' ? <CheckCircle className="h-4 w-4" /> : <Package className="h-4 w-4" />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-slate-700 truncate">{p.name}</div>
-                    <div className="text-xs text-slate-400">
-                      {p.partNumber && `#${p.partNumber} · `}
-                      {p.supplier && `${p.supplier} · `}
-                      {p.quantity > 1 ? `${p.quantity}x ` : ''}${p.unitCost.toFixed(2)}
-                      {p.quantity > 1 && ` = $${(p.unitCost * p.quantity).toFixed(2)}`}
-                    </div>
-                    <div className={cn("text-xs font-medium", p.status === 'received' ? 'text-green-600' : 'text-amber-600')}>
-                      {p.status === 'ordered' ? `Ordered ${p.dateOrdered ? format(parseISO(p.dateOrdered + 'T12:00:00'), 'MMM d') : ''}` : `✓ Received ${p.dateReceived ? format(parseISO(p.dateReceived + 'T12:00:00'), 'MMM d') : ''}`}
-                    </div>
-                  </div>
-                  <button onClick={() => deletePart(p.id)} className="p-1 rounded hover:bg-red-50 text-slate-300 hover:text-red-500 flex-shrink-0">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-              {(wo.parts?.length || 0) > 0 && (
-                <div className="text-right text-sm text-slate-600 pt-1">
-                  Parts Total: <strong>${partsTotal.toFixed(2)}</strong>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Payment */}
-      <Card>
-        <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-orange-500" />
-            Payment
-          </CardTitle>
-          {!editPayment ? (
-            <Button size="sm" variant="outline" onClick={() => setEditPayment(true)}>
-              <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-            </Button>
-          ) : (
-            <div className="flex gap-1">
-              <Button size="sm" onClick={() => updateWO({ amountCharged: parseFloat(amountCharged)||0, amountPaid: parseFloat(amountPaid)||0, paymentMethod })} disabled={saving} className="bg-orange-600 hover:bg-orange-700">
-                <Save className="h-3.5 w-3.5 mr-1" /> Save
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setEditPayment(false)}><X className="h-3.5 w-3.5" /></Button>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-3">
-          {suggestedTotal > 0 && (
-            <div className="p-2 bg-slate-50 rounded text-sm text-slate-600">
-              Suggested total: <strong className="text-slate-800">${suggestedTotal.toFixed(2)}</strong>
-              <span className="text-xs ml-2">(${laborTotal.toFixed(2)} labor + ${partsTotal.toFixed(2)} parts)</span>
-            </div>
-          )}
-          {editPayment ? (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">Amount Charged ($)</Label>
-                  <Input type="number" value={amountCharged} onChange={e => setAmountCharged(e.target.value)} step="0.01" min="0" className="mt-1" />
-                </div>
-                <div>
-                  <Label className="text-xs">Amount Paid ($)</Label>
-                  <Input type="number" value={amountPaid} onChange={e => setAmountPaid(e.target.value)} step="0.01" min="0" className="mt-1" />
-                </div>
+                <label className="text-xs text-gray-500">Part Number</label>
+                <input value={newPart.partNumber} onChange={e => setNewPart(p => ({ ...p, partNumber: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="ABC-123" />
               </div>
               <div>
-                <Label className="text-xs">Payment Method</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select method…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="check">Check</SelectItem>
-                    <SelectItem value="card">Card</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+                <label className="text-xs text-gray-500">Supplier</label>
+                <input value={newPart.supplier} onChange={e => setNewPart(p => ({ ...p, supplier: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="NAPA, dealer…" />
               </div>
-            </>
-          ) : (
-            <div className="space-y-1">
-              {wo.amountCharged > 0 ? (
-                <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Charged:</span>
-                    <span className="font-semibold text-slate-800">${wo.amountCharged.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Paid:</span>
-                    <span className={cn("font-semibold", wo.amountPaid >= wo.amountCharged ? "text-green-600" : "text-amber-600")}>
-                      ${wo.amountPaid.toFixed(2)}
-                    </span>
-                  </div>
-                  {wo.amountPaid < wo.amountCharged && (
-                    <div className="flex justify-between text-sm font-medium text-red-600">
-                      <span>Balance Due:</span>
-                      <span>${(wo.amountCharged - wo.amountPaid).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {wo.paymentMethod && (
-                    <div className="text-xs text-slate-400 capitalize">Method: {wo.paymentMethod}</div>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-slate-400 italic">Payment not yet recorded.</p>
-              )}
+              <div>
+                <label className="text-xs text-gray-500">Qty</label>
+                <input type="number" value={newPart.quantity} onChange={e => setNewPart(p => ({ ...p, quantity: Number(e.target.value) }))}
+                  className="w-full border rounded px-2 py-1 text-sm" min="1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Our Cost ($)</label>
+                <input type="number" value={newPart.cost} onChange={e => setNewPart(p => ({ ...p, cost: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Charge Customer ($)</label>
+                <input type="number" value={newPart.price} onChange={e => setNewPart(p => ({ ...p, price: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Date Ordered</label>
+                <input type="date" value={newPart.dateOrdered} onChange={e => setNewPart(p => ({ ...p, dateOrdered: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
+            <div className="flex gap-2">
+              <button onClick={addPart} disabled={!newPart.name}
+                className="bg-orange-500 text-white text-sm px-4 py-1 rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                Add Part
+              </button>
+              <button onClick={() => setShowAddPart(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+            </div>
+          </div>
+        )}
 
-function Field({ label, value, empty = '—' }: { label: string; value: string; empty?: string }) {
-  return (
-    <div>
-      <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">{label}</p>
-      <p className={cn("text-sm", value ? "text-slate-700" : "text-slate-400 italic")}>{value || empty}</p>
+        {/* Parts List */}
+        {parts.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">No parts added yet</p>
+        ) : (
+          <div className="space-y-2">
+            {parts.map(part => (
+              <div key={part.id} className={`border rounded-lg p-3 ${part.status === 'received' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{part.name}</span>
+                      {part.partNumber && <span className="text-xs text-gray-400">#{part.partNumber}</span>}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${part.status === 'received' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {part.status === 'received' ? '✓ Received' : '⏳ Ordered'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
+                      {part.supplier && <span>Supplier: {part.supplier}</span>}
+                      <span>Qty: {part.quantity}</span>
+                      {Number(part.cost) > 0 && <span>Cost: ${Number(part.cost).toFixed(2)}</span>}
+                      {Number(part.price) > 0 && <span className="font-medium text-gray-700">Charge: ${(Number(part.price) * Number(part.quantity)).toFixed(2)}</span>}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 flex gap-3">
+                      {part.dateOrdered && <span>Ordered: {part.dateOrdered}</span>}
+                      {part.status === 'received' && part.dateReceived && <span>Received: {part.dateReceived}</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 ml-2 shrink-0">
+                    {part.status !== 'received' && (
+                      <button onClick={() => markReceived(part.id)}
+                        className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
+                        Mark Received
+                      </button>
+                    )}
+                    <button onClick={() => deletePart(part.id)}
+                      className="text-xs text-red-400 hover:text-red-600">
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Financials */}
+      <div className="bg-white rounded-xl shadow p-4 space-y-4">
+        <h2 className="font-semibold text-gray-700">Financials</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {field('Labor Hours', 'laborHours', 'number')}
+          {field('Labor Rate ($/hr)', 'laborRate', 'number')}
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Labor ({wo.laborHours}h × ${wo.laborRate}/hr)</span>
+            <span>${laborTotal.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Parts ({parts.length} item{parts.length !== 1 ? 's' : ''})</span>
+            <span>${partsTotal.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+            <span>Estimated Total</span>
+            <span>${(laborTotal + partsTotal).toFixed(2)}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Payment Method</label>
+            {editing ? (
+              <select
+                value={form.paymentMethod || ''}
+                onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm"
+              >
+                {['', 'cash', 'check', 'card', 'other'].map(m => (
+                  <option key={m} value={m}>{m || '—'}</option>
+                ))}
+              </select>
+            ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '—'}</p>}
+          </div>
+          {field('Amount Charged ($)', 'amountCharged', 'number')}
+          {field('Amount Paid ($)', 'amountPaid', 'number')}
+        </div>
+        {editing && (
+          <button onClick={saveWorkOrder} disabled={saving}
+            className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 font-medium">
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        )}
+      </div>
+
+      {/* Danger Zone */}
+      <div className="text-center pb-4">
+        <button onClick={deleteWorkOrder} className="text-xs text-red-400 hover:text-red-600">
+          Delete this work order
+        </button>
+      </div>
     </div>
   )
 }

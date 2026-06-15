@@ -1,32 +1,46 @@
 import { NextResponse } from 'next/server'
 import { getPool, toPart } from '@/lib/db'
+import { v4 as uuidv4 } from 'uuid'
 
-export async function GET(request: Request) {
+export async function GET(req: Request) {
   const pool = getPool()
-  const { searchParams } = new URL(request.url)
+  const { searchParams } = new URL(req.url)
   const workOrderId = searchParams.get('workOrderId')
-
-  const { rows } = workOrderId
-    ? await pool.query(`SELECT * FROM parts WHERE work_order_id = $1 ORDER BY created_at`, [workOrderId])
-    : await pool.query(`SELECT * FROM parts ORDER BY created_at`)
-
-  return NextResponse.json(rows.map(toPart))
+  try {
+    const { rows } = workOrderId
+      ? await pool.query('SELECT * FROM parts WHERE work_order_id = $1 ORDER BY created_at', [workOrderId])
+      : await pool.query("SELECT * FROM parts WHERE status = 'ordered' ORDER BY created_at")
+    return NextResponse.json(rows.map(toPart))
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
 }
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   const pool = getPool()
-  const body = await request.json()
-  const id = crypto.randomUUID()
-
-  const { rows } = await pool.query(
-    `INSERT INTO parts (id, work_order_id, name, part_number, supplier, unit_cost, quantity, status, date_ordered, date_received)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [id, body.workOrderId, body.name || '', body.partNumber || '', body.supplier || '',
-     Number(body.unitCost) || 0, Number(body.quantity) || 1,
-     body.status || 'ordered',
-     body.dateOrdered || new Date().toISOString().split('T')[0],
-     body.dateReceived || '']
-  )
-
-  return NextResponse.json(toPart(rows[0]), { status: 201 })
+  try {
+    const body = await req.json()
+    const id = uuidv4()
+    const { rows } = await pool.query(
+      `INSERT INTO parts
+         (id, work_order_id, name, part_number, supplier, quantity,
+          cost, price, status, date_ordered, date_received, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ordered',$9,'','')
+       RETURNING *`,
+      [
+        id,
+        body.workOrderId,
+        body.name || '',
+        body.partNumber || '',
+        body.supplier || '',
+        body.quantity || 1,
+        body.cost || 0,
+        body.price || 0,
+        body.dateOrdered || new Date().toISOString().split('T')[0],
+      ]
+    )
+    return NextResponse.json(toPart(rows[0]))
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
 }
