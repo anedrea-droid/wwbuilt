@@ -33,6 +33,22 @@ export async function PATCH(
     if (rows.length === 0)
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // Auto-update work order status when all parts are received
+    if (body.status === 'received') {
+      const workOrderId = rows[0].work_order_id
+      const { rows: allParts } = await pool.query(
+        'SELECT status FROM parts WHERE work_order_id = $1',
+        [workOrderId]
+      )
+      const allReceived = allParts.every(p => p.status === 'received')
+      if (allReceived) {
+        await pool.query(
+          "UPDATE work_orders SET status = 'in-progress' WHERE id = $1 AND status = 'waiting-parts'",
+          [workOrderId]
+        )
+      }
+    }
+
     return NextResponse.json(toPart(rows[0]))
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
