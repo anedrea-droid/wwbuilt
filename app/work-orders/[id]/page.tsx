@@ -138,7 +138,7 @@ export default function WorkOrderDetail() {
           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
           className="w-full border rounded px-2 py-1 text-sm" />
       ) : (
-        <p className="text-sm text-gray-800">{String(wo[key] || 'â€”')}</p>
+        <p className="text-sm text-gray-800">{String(wo[key] || '-')}</p>
       )}
     </div>
   )
@@ -151,7 +151,7 @@ export default function WorkOrderDetail() {
           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
           rows={3} className="w-full border rounded px-2 py-1 text-sm" />
       ) : (
-        <p className="text-sm text-gray-800 whitespace-pre-wrap">{String(wo[key] || 'â€”')}</p>
+        <p className="text-sm text-gray-800 whitespace-pre-wrap">{String(wo[key] || '-')}</p>
       )}
     </div>
   )
@@ -267,7 +267,7 @@ export default function WorkOrderDetail() {
                     className="w-full text-left px-3 py-2 bg-white rounded border hover:bg-blue-100 text-sm">
                     <span className="font-medium">{s.name}</span>
                     {s.partNumber && <span className="text-gray-400 ml-2">#{s.partNumber}</span>}
-                    {s.supplier && <span className="text-gray-400 ml-2">â€” {s.supplier}</span>}
+                    {s.supplier && <span className="text-gray-400 ml-2">- {s.supplier}</span>}
                     {Number(s.price) > 0 && <span className="text-gray-500 ml-2">${Number(s.price).toFixed(2)}</span>}
                   </button>
                 ))}
@@ -402,10 +402,10 @@ export default function WorkOrderDetail() {
               <select value={form.paymentMethod || ''} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
                 className="w-full border rounded px-2 py-1 text-sm">
                 {['', 'cash', 'check', 'card', 'other'].map(m => (
-                  <option key={m} value={m}>{m || 'â€”'}</option>
+                  <option key={m} value={m}>{m || '-'}</option>
                 ))}
               </select>
-            ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || 'â€”'}</p>}
+            ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '-'}</p>}
           </div>
           {field('Amount Charged ($)', 'amountCharged', 'number')}
           {field('Amount Paid ($)', 'amountPaid', 'number')}
