@@ -16,9 +16,12 @@ export default function Nav() {
       <Link href="/search" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
         Search
       </Link>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-3">
         <Link href="/settings" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
           ⚙️ Settings
+        </Link>
+        <Link href="/work-orders/new" className="bg-white text-orange-500 font-semibold px-4 py-1.5 rounded-lg text-sm hover:bg-orange-50">
+          + New Job
         </Link>
       </div>
     </nav>
