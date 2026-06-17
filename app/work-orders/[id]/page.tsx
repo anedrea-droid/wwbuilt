@@ -19,12 +19,11 @@ interface Part {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  pending:    'bg-yellow-100 text-yellow-800',
-  diagnosing: 'bg-blue-100 text-blue-800',
-  waiting:    'bg-orange-100 text-orange-800',
-  'in-progress': 'bg-purple-100 text-purple-800',
-  ready:      'bg-green-100 text-green-800',
-  done:       'bg-gray-100 text-gray-800',
+  'pending':       'bg-yellow-100 text-yellow-800',
+  'in-progress':   'bg-blue-100 text-blue-800',
+  'waiting-parts': 'bg-orange-100 text-orange-800',
+  'complete':      'bg-green-100 text-green-800',
+  'picked-up':     'bg-gray-100 text-gray-800',
 }
 
 export default function WorkOrderDetail() {
