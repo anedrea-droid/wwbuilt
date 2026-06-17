@@ -131,7 +131,7 @@ export default function WorkOrdersDashboard() {
       ) : (
         <div className="space-y-2.5">
           {filtered.map(wo => {
-            const cfg = STATUS_CFG[wo.status]
+            const cfg = STATUS_CFG[wo.status] ?? { label: wo.status || 'Unknown', cls: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400' }
             const orderedParts = wo.parts?.filter(p => p.status === 'ordered') || []
             return (
               <Link key={wo.id} href={`/work-orders/${wo.id}`} className="block">
