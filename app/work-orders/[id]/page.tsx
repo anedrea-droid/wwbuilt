@@ -39,6 +39,7 @@ export default function WorkOrderDetail() {
   const [showAddPart, setShowAddPart] = useState(false)
   const [showCatalog, setShowCatalog] = useState(false)
   const [catalog, setCatalog] = useState<SavedPart[]>([])
+  const [catalogSearch, setCatalogSearch] = useState('')
   const [newPart, setNewPart] = useState({
     name: '', partNumber: '', supplier: '', quantity: 1,
     cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0],
@@ -257,24 +258,41 @@ export default function WorkOrderDetail() {
 
         {showCatalog && (
           <div className="border rounded-lg p-3 mb-4 bg-blue-50">
-            <p className="text-sm font-medium text-gray-700 mb-2">Select a part to pre-fill the form:</p>
-            {catalog.length === 0 ? (
-              <p className="text-xs text-gray-400">No saved parts yet. Add a part then click Save to Catalog.</p>
-            ) : (
-              <div className="space-y-1 max-h-48 overflow-y-auto">
-                {catalog.map(s => (
-                  <button key={s.id} onClick={() => loadFromCatalog(s)}
-                    className="w-full text-left px-3 py-2 bg-white rounded border hover:bg-blue-100 text-sm">
-                    <span className="font-medium">{s.name}</span>
-                    {s.partNumber && <span className="text-gray-400 ml-2">#{s.partNumber}</span>}
-                    {s.supplier && <span className="text-gray-400 ml-2">- {s.supplier}</span>}
-                    {Number(s.price) > 0 && <span className="text-gray-500 ml-2">${Number(s.price).toFixed(2)}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
+            <input
+              autoFocus
+              placeholder="Search catalog by name, part number or supplier..."
+              value={catalogSearch}
+              onChange={e => setCatalogSearch(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm mb-2"
+            />
+            {catalogSearch.length === 0 ? (
+              <p className="text-xs text-gray-400">Start typing to search saved parts</p>
+            ) : (() => {
+              const q = catalogSearch.toLowerCase()
+              const matches = catalog.filter(s =>
+                s.name.toLowerCase().includes(q) ||
+                s.partNumber.toLowerCase().includes(q) ||
+                s.supplier.toLowerCase().includes(q)
+              )
+              return matches.length === 0 ? (
+                <p className="text-xs text-gray-400">No matches found</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {matches.map(s => (
+                    <button key={s.id} onClick={() => { loadFromCatalog(s); setCatalogSearch('') }}
+                      className="w-full text-left px-3 py-2 bg-white rounded border hover:bg-blue-100 text-sm">
+                      <span className="font-medium">{s.name}</span>
+                      {s.partNumber && <span className="text-gray-400 ml-2">#{s.partNumber}</span>}
+                      {s.supplier && <span className="text-gray-400 ml-2">- {s.supplier}</span>}
+                      {Number(s.price) > 0 && <span className="text-gray-500 ml-2">${Number(s.price).toFixed(2)}</span>}
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         )}
+
 
         {showAddPart && (
           <div className="border rounded-lg p-3 mb-4 bg-orange-50 space-y-3">
