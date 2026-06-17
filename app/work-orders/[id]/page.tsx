@@ -87,6 +87,11 @@ export default function WorkOrderDetail() {
     })
     const updated = await res.json()
     setParts(p => p.map(x => x.id === partId ? updated : x))
+    const woRes = await fetch(`/api/work-orders/${id}`)
+    const woData = await woRes.json()
+    setWo(woData)
+    setForm(woData)
+  }
   }
 
   async function deletePart(partId: string) {
