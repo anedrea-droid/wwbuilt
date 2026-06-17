@@ -52,7 +52,7 @@ export default function WorkOrderDetail() {
 
   useEffect(() => {
     if (!wo) return
-    fetch(`/api/customers/${wo.customerId}`).then(r => r.json()).then(setCustomer)
+    fetch(`/api/customers/${wo.customerId}`).then(r => r.json()).then(data => setCustomer(data.customer ?? data))
     fetch(`/api/equipment/${wo.equipmentId}`).then(r => r.json()).then(setEquipment)
   }, [wo])
 
