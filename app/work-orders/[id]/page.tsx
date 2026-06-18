@@ -240,8 +240,7 @@ export default function WorkOrderDetail() {
         {textarea('Work Done', 'workDone')}
         {field('Labor Hours', 'laborHours', 'number')}
         {textarea('Notes', 'notes')}
-        {textarea('Notes', 'notes')}
-      </div>
+     </div>
 
       <div className="bg-white rounded-xl shadow p-4">
         <div className="flex items-center justify-between mb-3">
