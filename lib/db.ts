@@ -64,6 +64,11 @@ export function toWorkOrder(r: Record<string, unknown>) {
     paymentMethod: r.payment_method,
     amountCharged: r.amount_charged,
     amountPaid: r.amount_paid,
+    referralPickupDate: r.referral_pickup_date,
+    referralDropoffDate: r.referral_dropoff_date,
+    shopPaymentAmount: r.shop_payment_amount,
+    shopPaymentDate: r.shop_payment_date,
+    shopPaymentReceived: r.shop_payment_received ?? false,
     createdAt: r.created_at,
   }
 }
