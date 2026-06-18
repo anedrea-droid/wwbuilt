@@ -7,6 +7,8 @@ interface WorkOrder {
   id: string; orderNumber: string; customerId: string; equipmentId: string
   status: string; technician: string; complaint: string; diagnosis: string
   workDone: string; laborHours: number; laborRate: number; dateIn: string
+  referralPickupDate?: string; referralDropoffDate?: string
+  shopPaymentAmount?: number; shopPaymentDate?: string; shopPaymentReceived?: boolean
   dateComplete: string; datePickedUp: string; notes: string
   paymentMethod: string; amountCharged: number; amountPaid: number
 }
@@ -80,6 +82,11 @@ export default function WorkOrderDetail() {
       payment_method: form.paymentMethod,
       amount_charged: form.amountCharged,
       amount_paid: form.amountPaid,
+      referral_pickup_date: form.referralPickupDate,
+      referral_dropoff_date: form.referralDropoffDate,
+      shop_payment_amount: form.shopPaymentAmount,
+      shop_payment_date: form.shopPaymentDate,
+      shop_payment_received: form.shopPaymentReceived,
     }
     const res = await fetch('/api/work-orders/' + id, {
       method: 'PATCH',
@@ -526,6 +533,66 @@ export default function WorkOrderDetail() {
         )}
       </div>
 
+
+
+      {/* Referral Shop Tracking - only shown for referral customers */}
+      {customer?.source === 'referral' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl shadow p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-blue-800">Referral Shop Tracking</h2>
+            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{customer?.referralShop || 'Referral Shop'}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Picked Up From Shop</label>
+              {editing ? (
+                <input type="date" value={form.referralPickupDate || ''} onChange={e => setForm(f => ({ ...f, referralPickupDate: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.referralPickupDate ? String(wo.referralPickupDate).slice(0, 10) : '-'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Returned to Shop</label>
+              {editing ? (
+                <input type="date" value={form.referralDropoffDate || ''} onChange={e => setForm(f => ({ ...f, referralDropoffDate: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0, 10) : '-'}</p>}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Shop Payment Amount ($)</label>
+              {editing ? (
+                <input type="number" step="0.01" value={form.shopPaymentAmount || ''} onChange={e => setForm(f => ({ ...f, shopPaymentAmount: Number(e.target.value) }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.shopPaymentAmount ? '$' + Number(wo.shopPaymentAmount).toFixed(2) : '-'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Shop Payment Date</label>
+              {editing ? (
+                <input type="date" value={form.shopPaymentDate || ''} onChange={e => setForm(f => ({ ...f, shopPaymentDate: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.shopPaymentDate ? String(wo.shopPaymentDate).slice(0, 10) : '-'}</p>}
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Payment Received</label>
+              {editing ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={!!form.shopPaymentReceived} onChange={e => setForm(f => ({ ...f, shopPaymentReceived: e.target.checked }))}
+                    className="w-4 h-4" />
+                  <span>Received</span>
+                </label>
+              ) : (
+                <span className={'text-sm font-medium ' + (wo.shopPaymentReceived ? 'text-green-600' : 'text-orange-500')}>
+                  {wo.shopPaymentReceived ? 'Received' : 'Pending'}
+                </span>
+              )}
+            </div>
+          </div>
+          {!editing && wo.referralDropoffDate && !wo.shopPaymentReceived && (
+            <p className="text-xs text-orange-600 font-medium">Payment outstanding - equipment returned to shop</p>
+          )}
+        </div>
+      )}
 
       {/* Payout Summary - Internal Only */}
       <div className="bg-white rounded-xl shadow p-4 space-y-3 border-2 border-dashed border-gray-200">
