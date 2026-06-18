@@ -45,6 +45,8 @@ export default function WorkOrderDetail() {
     cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0],
   })
   const [saving, setSaving] = useState(false)
+  const [editingPart, setEditingPart] = useState<string | null>(null)
+  const [partForm, setPartForm] = useState<Partial<Part>>({})
 
   useEffect(() => {
     fetch('/api/work-orders/' + id)
@@ -115,6 +117,26 @@ export default function WorkOrderDetail() {
     setNewPart(p => ({ ...p, name: saved.name, partNumber: saved.partNumber, supplier: saved.supplier, cost: String(saved.cost), price: String(saved.price) }))
     setShowCatalog(false)
     setShowAddPart(true)
+  }
+
+  async function updatePart() {
+    if (!editingPart) return
+    const res = await fetch('/api/parts/' + editingPart, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: partForm.name,
+        part_number: partForm.partNumber,
+        supplier: partForm.supplier,
+        quantity: partForm.quantity,
+        cost: partForm.cost,
+        price: partForm.price,
+      }),
+    })
+    const updated = await res.json()
+    setParts(p => p.map(x => x.id === editingPart ? updated : x))
+    setEditingPart(null)
+    setPartForm({})
   }
 
   async function deletePart(partId: string) {
@@ -238,9 +260,8 @@ export default function WorkOrderDetail() {
         {textarea('Complaint / Problem Reported', 'complaint')}
         {textarea('Diagnosis', 'diagnosis')}
         {textarea('Work Done', 'workDone')}
-        {field('Labor Hours', 'laborHours', 'number')}
         {textarea('Notes', 'notes')}
-     </div>
+      </div>
 
       <div className="bg-white rounded-xl shadow p-4">
         <div className="flex items-center justify-between mb-3">
@@ -351,43 +372,94 @@ export default function WorkOrderDetail() {
           <div className="space-y-2">
             {parts.map(part => (
               <div key={part.id} className={'border rounded-lg p-3 ' + (part.status === 'received' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200')}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm">{part.name}</span>
-                      {part.partNumber && <span className="text-xs text-gray-400">#{part.partNumber}</span>}
-                      <span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (part.status === 'received' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')}>
-                        {part.status === 'received' ? 'Received' : 'Ordered'}
-                      </span>
+                {editingPart === part.id ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">Part Name</label>
+                        <input value={partForm.name || ''} onChange={e => setPartForm(f => ({ ...f, name: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Part Number</label>
+                        <input value={partForm.partNumber || ''} onChange={e => setPartForm(f => ({ ...f, partNumber: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Supplier</label>
+                        <input value={partForm.supplier || ''} onChange={e => setPartForm(f => ({ ...f, supplier: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Qty</label>
+                        <input type="number" value={partForm.quantity || 1} onChange={e => setPartForm(f => ({ ...f, quantity: Number(e.target.value) }))}
+                          className="w-full border rounded px-2 py-1 text-sm" min="1" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Our Cost ($)</label>
+                        <input type="number" value={partForm.cost || ''} onChange={e => setPartForm(f => ({ ...f, cost: Number(e.target.value) }))}
+                          className="w-full border rounded px-2 py-1 text-sm" step="0.01" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Charge Customer ($)</label>
+                        <input type="number" value={partForm.price || ''} onChange={e => setPartForm(f => ({ ...f, price: Number(e.target.value) }))}
+                          className="w-full border rounded px-2 py-1 text-sm" step="0.01" />
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
-                      {part.supplier && <span>Supplier: {part.supplier}</span>}
-                      <span>Qty: {part.quantity}</span>
-                      {Number(part.cost) > 0 && <span>Cost: ${Number(part.cost).toFixed(2)}</span>}
-                      {Number(part.price) > 0 && <span className="font-medium text-gray-700">Charge: ${(Number(part.price) * Number(part.quantity)).toFixed(2)}</span>}
-                    </div>
-                    <div className="text-xs text-gray-400 mt-1 flex gap-3">
-                      {part.dateOrdered && <span>Ordered: {part.dateOrdered}</span>}
-                      {part.status === 'received' && part.dateReceived && <span>Received: {part.dateReceived}</span>}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1 ml-2 shrink-0">
-                    <button onClick={() => saveToCatalog(part)}
-                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">
-                      Save to Catalog
-                    </button>
-                    {part.status !== 'received' && (
-                      <button onClick={() => markReceived(part.id)}
-                        className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
-                        Mark Received
+                    <div className="flex gap-2">
+                      <button onClick={updatePart}
+                        className="text-xs bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600">
+                        Save
                       </button>
-                    )}
-                    <button onClick={() => deletePart(part.id)}
-                      className="text-xs text-red-400 hover:text-red-600 text-center">
-                      Delete
-                    </button>
+                      <button onClick={() => { setEditingPart(null); setPartForm({}) }}
+                        className="text-xs text-gray-500 hover:text-gray-700">
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{part.name}</span>
+                        {part.partNumber && <span className="text-xs text-gray-400">#{part.partNumber}</span>}
+                        <span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (part.status === 'received' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')}>
+                          {part.status === 'received' ? 'Received' : 'Ordered'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
+                        {part.supplier && <span>Supplier: {part.supplier}</span>}
+                        <span>Qty: {part.quantity}</span>
+                        {Number(part.cost) > 0 && <span>Cost: ${Number(part.cost).toFixed(2)}</span>}
+                        {Number(part.price) > 0 && <span className="font-medium text-gray-700">Charge: ${(Number(part.price) * Number(part.quantity)).toFixed(2)}</span>}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 flex gap-3">
+                        {part.dateOrdered && <span>Ordered: {part.dateOrdered}</span>}
+                        {part.status === 'received' && part.dateReceived && <span>Received: {part.dateReceived}</span>}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 ml-2 shrink-0">
+                      <button onClick={() => { setEditingPart(part.id); setPartForm(part) }}
+                        className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200">
+                        Edit
+                      </button>
+                      <button onClick={() => saveToCatalog(part)}
+                        className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">
+                        Save to Catalog
+                      </button>
+                      {part.status !== 'received' && (
+                        <button onClick={() => markReceived(part.id)}
+                          className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
+                          Mark Received
+                        </button>
+                      )}
+                      <button onClick={() => deletePart(part.id)}
+                        className="text-xs text-red-400 hover:text-red-600 text-center">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
