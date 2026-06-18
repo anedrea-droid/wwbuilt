@@ -260,7 +260,7 @@ export default function WorkOrderDetail() {
         {textarea('Complaint / Problem Reported', 'complaint')}
         {textarea('Diagnosis', 'diagnosis')}
         {textarea('Work Done', 'workDone')}
-         {field('Labor Hours', 'laborHours', 'number')}
+        {field('Labor Hours', 'laborHours', 'number')}
         {textarea('Notes', 'notes')}
       </div>
 
@@ -508,6 +508,60 @@ export default function WorkOrderDetail() {
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         )}
+      </div>
+
+
+      {/* Payout Summary - Internal Only */}
+      <div className="bg-white rounded-xl shadow p-4 space-y-3 border-2 border-dashed border-gray-200">
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold text-gray-700">Payout Summary</h2>
+          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Internal Only</span>
+        </div>
+        {(() => {
+          const invoice = Number(wo.amountCharged) || 0
+          const partsOurCost = parts.reduce((sum, p) => sum + (Number(p.cost) * Number(p.quantity)), 0)
+          const isReferral = customer?.source === 'referral'
+          const referralCut = isReferral ? invoice * 0.20 : 0
+          const afterReferral = invoice - referralCut
+          const netToSplit = afterReferral - partsOurCost
+          const wadePayout = netToSplit * 0.60
+          const waynePayout = netToSplit * 0.40
+          return (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Invoice Total</span>
+                <span className="font-medium">${invoice.toFixed(2)}</span>
+              </div>
+              {isReferral && (
+                <div className="flex justify-between text-red-600">
+                  <span>Referral Shop Cut (20%) - {customer?.referralShop || 'Other Shop'}</span>
+                  <span>-${referralCut.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-red-600">
+                <span>Parts Cost (WW paid)</span>
+                <span>-${partsOurCost.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-semibold border-t pt-2">
+                <span>Net to Split</span>
+                <span>${netToSplit.toFixed(2)}</span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                <div className="flex justify-between text-orange-700">
+                  <span>Wade (60%)</span>
+                  <span className="font-semibold">${wadePayout.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-blue-700">
+                  <span>Wayne (40%)</span>
+                  <span className="font-semibold">${waynePayout.toFixed(2)}</span>
+                </div>
+              </div>
+              {invoice === 0 && (
+                <p className="text-xs text-gray-400 italic">Enter Amount Charged in Financials to calculate payouts</p>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <div className="text-center pb-4">
