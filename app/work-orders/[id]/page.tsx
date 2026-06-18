@@ -534,7 +534,10 @@ export default function WorkOrderDetail() {
           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Internal Only</span>
         </div>
         {(() => {
-          const invoice = Number(wo.amountCharged) || 0
+          const laborTotal = (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+          const partsChargeTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
+          const estimatedTotal = laborTotal + partsChargeTotal
+          const invoice = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : estimatedTotal
           const partsOurCost = parts.reduce((sum, p) => sum + (Number(p.cost) * Number(p.quantity)), 0)
           const isReferral = customer?.source === 'referral'
           const referralCut = isReferral ? invoice * 0.20 : 0
@@ -545,7 +548,10 @@ export default function WorkOrderDetail() {
           return (
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Invoice Total</span>
+                <span className="text-gray-500">
+                  Invoice Total
+                  {Number(wo.amountCharged) === 0 && <span className="ml-1 text-xs text-gray-400">(estimated)</span>}
+                </span>
                 <span className="font-medium">${invoice.toFixed(2)}</span>
               </div>
               {isReferral && (
@@ -572,8 +578,8 @@ export default function WorkOrderDetail() {
                   <span className="font-semibold">${waynePayout.toFixed(2)}</span>
                 </div>
               </div>
-              {invoice === 0 && (
-                <p className="text-xs text-gray-400 italic">Enter Amount Charged in Financials to calculate payouts</p>
+              {estimatedTotal === 0 && invoice === 0 && (
+                <p className="text-xs text-gray-400 italic">Using Estimated Total. Enter Amount Charged to override.</p>
               )}
             </div>
           )
