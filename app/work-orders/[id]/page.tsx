@@ -238,6 +238,8 @@ export default function WorkOrderDetail() {
         {textarea('Complaint / Problem Reported', 'complaint')}
         {textarea('Diagnosis', 'diagnosis')}
         {textarea('Work Done', 'workDone')}
+        {field('Labor Hours', 'laborHours', 'number')}
+        {textarea('Notes', 'notes')}
         {textarea('Notes', 'notes')}
       </div>
 
