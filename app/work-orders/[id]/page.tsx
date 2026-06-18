@@ -65,10 +65,26 @@ export default function WorkOrderDetail() {
 
   async function saveWorkOrder() {
     setSaving(true)
+    const payload = {
+      status: form.status,
+      technician: form.technician,
+      complaint: form.complaint,
+      diagnosis: form.diagnosis,
+      work_done: form.workDone,
+      labor_hours: form.laborHours,
+      labor_rate: form.laborRate,
+      date_in: form.dateIn,
+      date_complete: form.dateComplete,
+      date_picked_up: form.datePickedUp,
+      notes: form.notes,
+      payment_method: form.paymentMethod,
+      amount_charged: form.amountCharged,
+      amount_paid: form.amountPaid,
+    }
     const res = await fetch('/api/work-orders/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify(payload),
     })
     const updated = await res.json()
     setWo(updated); setForm(updated); setEditing(false); setSaving(false)
