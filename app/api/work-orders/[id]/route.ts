@@ -27,13 +27,22 @@ export async function PATCH(
     const fields: string[] = []
     const values: unknown[] = []
     let idx = 1
-    const allowed = ['status','technician','complaint','diagnosis','work_done','labor_hours','labor_rate','date_in','date_complete','date_picked_up','notes','payment_method','amount_charged','amount_paid']
+    const allowed = [
+      'status', 'technician', 'complaint', 'diagnosis', 'work_done',
+      'labor_hours', 'labor_rate', 'date_in', 'date_complete', 'date_picked_up',
+      'notes', 'payment_method', 'amount_charged', 'amount_paid',
+      'referral_pickup_date', 'referral_dropoff_date',
+      'shop_payment_amount', 'shop_payment_date', 'shop_payment_received',
+    ]
     for (const key of allowed) {
-      if (body[key] !== undefined) { fields.push(`${key} = $${idx++}`); values.push(body[key]) }
+      if (body[key] !== undefined) { fields.push(key + ' = $' + idx++); values.push(body[key]) }
     }
     if (fields.length === 0) return NextResponse.json({ error: 'No fields' }, { status: 400 })
     values.push(id)
-    const { rows } = await pool.query(`UPDATE work_orders SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, values)
+    const { rows } = await pool.query(
+      'UPDATE work_orders SET ' + fields.join(', ') + ' WHERE id = $' + idx + ' RETURNING *',
+      values
+    )
     return NextResponse.json(toWorkOrder(rows[0]))
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
