@@ -45,8 +45,14 @@ export async function PATCH(
     )
 
     // Auto-status logic - runs after the main update
+    // shop_payment_received = true -> picked-up (job fully settled)
+    if (body.shop_payment_received === true || body.shop_payment_received === 'true') {
+      await pool.query(
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status = 'at-shop'",
+        [id]
+      )
     // referral_dropoff_date set -> at-shop (WW returned it, waiting for shop payment)
-    if (body.referral_dropoff_date) {
+    } else if (body.referral_dropoff_date) {
       await pool.query(
         "UPDATE work_orders SET status = 'at-shop' WHERE id = $1",
         [id]
