@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 
+const PRINT_STYLES = '@media print { nav { display: none !important; } .print\\:hidden { display: none !important; } body { background: white !important; } }'
+
 type ReportTab = 'financial' | 'referral' | 'workorders' | 'parts'
 
 function fmt(n: unknown) {
@@ -88,25 +90,32 @@ export default function ReportsPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+      <style dangerouslySetInnerHTML={{ __html: PRINT_STYLES }} />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-800">Reports</h1>
-        {needsDates && (
-          <div className="flex items-center gap-2 text-sm">
-            <label className="text-gray-500">From</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="border rounded px-2 py-1 text-sm" />
-            <label className="text-gray-500">To</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-              className="border rounded px-2 py-1 text-sm" />
-            <button onClick={load}
-              className="bg-orange-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-orange-600">
-              Run
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {needsDates && (
+            <div className="flex items-center gap-2 text-sm print:hidden">
+              <label className="text-gray-500">From</label>
+              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                className="border rounded px-2 py-1 text-sm" />
+              <label className="text-gray-500">To</label>
+              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+                className="border rounded px-2 py-1 text-sm" />
+              <button onClick={load}
+                className="bg-orange-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-orange-600">
+                Run
+              </button>
+            </div>
+          )}
+          <button onClick={() => window.print()}
+            className="print:hidden flex items-center gap-1.5 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
+            Print / Save PDF
+          </button>
+        </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 print:hidden">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={'px-4 py-2 rounded-lg text-sm font-medium ' + (tab === t.id ? 'bg-orange-500 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50')}>
@@ -116,6 +125,17 @@ export default function ReportsPage() {
       </div>
 
       {loading && <p className="text-sm text-gray-400 text-center py-8">Loading...</p>}
+
+      {/* Print-only header */}
+      <div className="hidden print:block mb-4 pb-3 border-b">
+        <div className="text-xl font-bold text-gray-900">WW Small Engine - Reports</div>
+        <div className="text-sm text-gray-500 mt-1">
+          {tab === 'financial' && 'Financial Reports - ' + fromDate + ' to ' + toDate}
+          {tab === 'referral' && 'Referral Shop Reports'}
+          {tab === 'workorders' && 'Completed Work Orders - ' + fromDate + ' to ' + toDate}
+          {tab === 'parts' && 'Pending Parts Report'}
+        </div>
+      </div>
 
       {!loading && tab === 'financial' && (
         <div className="space-y-5">
