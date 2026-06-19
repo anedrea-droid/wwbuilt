@@ -27,6 +27,7 @@ const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
   'in-progress':   { label: 'In Progress',      cls: 'bg-blue-100 text-blue-700' },
   'waiting-parts': { label: 'Waiting Parts',    cls: 'bg-amber-100 text-amber-700' },
   'complete':      { label: 'Ready for Pickup', cls: 'bg-green-100 text-green-700' },
+  'at-shop': { label: 'At Referral Shop', cls: 'bg-purple-100 text-purple-700' },
   'picked-up':     { label: 'Picked Up',        cls: 'bg-slate-100 text-slate-500' },
 }
 
