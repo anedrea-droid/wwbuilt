@@ -285,7 +285,7 @@ export default function WorkOrderDetail() {
         {textarea('Diagnosis', 'diagnosis')}
         {textarea('Work Done', 'workDone')}
         {field('Labor Hours', 'laborHours', 'number')}
-        {textarea('Notes', 'notes')}
+        {('Notes', 'notes')}
       </div>
 
       <div className="bg-white rounded-xl shadow p-4">
