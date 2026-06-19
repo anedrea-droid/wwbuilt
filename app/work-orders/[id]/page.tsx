@@ -109,6 +109,9 @@ export default function WorkOrderDetail() {
     setNewPart({ name: '', partNumber: '', supplier: '', quantity: 1, cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0] })
     setShowAddPart(false)
     setShowCatalog(false)
+    const woRes = await fetch('/api/work-orders/' + id)
+    const woData = await woRes.json()
+    setWo(woData); setForm(woData)
   }
 
   async function markReceived(partId: string) {
