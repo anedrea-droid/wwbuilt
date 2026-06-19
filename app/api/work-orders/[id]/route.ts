@@ -39,11 +39,37 @@ export async function PATCH(
     }
     if (fields.length === 0) return NextResponse.json({ error: 'No fields' }, { status: 400 })
     values.push(id)
-    const { rows } = await pool.query(
+    await pool.query(
       'UPDATE work_orders SET ' + fields.join(', ') + ' WHERE id = $' + idx + ' RETURNING *',
       values
     )
-    return NextResponse.json(toWorkOrder(rows[0]))
+
+    // Auto-status logic - runs after the main update
+    // referral_dropoff_date set -> at-shop (WW returned it, waiting for shop payment)
+    if (body.referral_dropoff_date) {
+      await pool.query(
+        "UPDATE work_orders SET status = 'at-shop' WHERE id = $1",
+        [id]
+      )
+    }
+    // date_picked_up set -> picked-up (highest priority for non-referral)
+    else if (body.date_picked_up) {
+      await pool.query(
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1",
+        [id]
+      )
+    }
+    // date_complete set -> complete (only if not already at-shop or picked-up)
+    else if (body.date_complete) {
+      await pool.query(
+        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
+        [id]
+      )
+    }
+
+    // Re-fetch final state after all updates
+    const { rows: final } = await pool.query('SELECT * FROM work_orders WHERE id = $1', [id])
+    return NextResponse.json(toWorkOrder(final[0]))
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
