@@ -13,7 +13,8 @@ export async function GET(req: Request) {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_complete, wo.amount_charged, wo.labor_hours, wo.labor_rate, ' +
         'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
-        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
@@ -62,7 +63,8 @@ export async function GET(req: Request) {
         'wo.shop_payment_received, wo.shop_payment_amount, wo.shop_payment_date, ' +
         'c.name as customer_name, c.referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
-        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
