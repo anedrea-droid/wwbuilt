@@ -5,7 +5,7 @@ export default function Nav() {
   return (
     <nav className="bg-orange-500 text-white px-4 py-3 flex items-center gap-4">
       <Link href="/" className="font-bold text-lg mr-4">
-        🔧 WW Small Engine
+        WW Small Engine
       </Link>
       <Link href="/" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
         Work Orders
@@ -16,9 +16,12 @@ export default function Nav() {
       <Link href="/search" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
         Search
       </Link>
+      <Link href="/reports" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
+        Reports
+      </Link>
       <div className="ml-auto flex items-center gap-3">
         <Link href="/settings" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
-          ⚙️ Settings
+          Settings
         </Link>
         <Link href="/work-orders/new" className="bg-white text-orange-500 font-semibold px-4 py-1.5 rounded-lg text-sm hover:bg-orange-50">
           + New Job
