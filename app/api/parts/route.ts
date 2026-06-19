@@ -23,6 +23,15 @@ export async function POST(req: Request) {
     const sql = 'INSERT INTO parts (id, work_order_id, name, part_number, supplier, quantity, cost, price, status, date_ordered, date_received, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,\'ordered\',$9,\'\',\'\') RETURNING *'
     const vals = [id, body.workOrderId, body.name || '', body.partNumber || '', body.supplier || '', body.quantity || 1, body.cost || 0, body.price || 0, body.dateOrdered || new Date().toISOString().split('T')[0]]
     const { rows } = await pool.query(sql, vals)
+
+    // Auto-update work order status to waiting-parts if not already in a finished state
+    if (body.workOrderId) {
+      await pool.query(
+        "UPDATE work_orders SET status = 'waiting-parts' WHERE id = $1 AND status NOT IN ('complete', 'at-shop', 'picked-up')",
+        [body.workOrderId]
+      )
+    }
+
     return NextResponse.json(toPart(rows[0]))
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
