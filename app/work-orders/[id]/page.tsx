@@ -26,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
   'in-progress':   'bg-blue-100 text-blue-800',
   'waiting-parts': 'bg-orange-100 text-orange-800',
   'complete':      'bg-green-100 text-green-800',
+  'at-shop':       'bg-purple-100 text-purple-700',
   'picked-up':     'bg-gray-100 text-gray-800',
 }
 
@@ -267,7 +268,7 @@ export default function WorkOrderDetail() {
             {editing ? (
               <select value={form.status || ''} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 className="w-full border rounded px-2 py-1 text-sm">
-                {['pending','in-progress','waiting-parts','complete','picked-up'].map(s => (
+                {['pending','in-progress','waiting-parts','complete','at-shop','picked-up'].map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
