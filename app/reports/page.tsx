@@ -167,8 +167,8 @@ export default function ReportsPage() {
                       <tbody>
                         {payouts.map((row) => {
                           const invoice = Number(row.amount_charged) || 0
-                          const partsCost = Number(row.parts_cost) || 0
-                          const afterParts = invoice - partsCost
+                          const partsCharged = Number(row.parts_charged) || 0
+                          const afterParts = invoice - partsCharged
                           const isRef = row.customer_source === 'referral'
                           const refCut = isRef ? afterParts * 0.20 : 0
                           const net = afterParts - refCut
@@ -188,7 +188,7 @@ export default function ReportsPage() {
                               <td className="py-1.5 pr-3 text-gray-700">{String(row.customer_name || '-')}</td>
                               <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
                               <td className="py-1.5 pr-3 text-right">{fmt(invoice)}</td>
-                              <td className="py-1.5 pr-3 text-right text-red-500">{fmt(partsCost)}</td>
+                              <td className="py-1.5 pr-3 text-right text-red-500">{fmt(partsCharged)}</td>
                               <td className="py-1.5 pr-3 text-right text-red-500">{isRef ? fmt(refCut) : '-'}</td>
                               <td className="py-1.5 pr-3 text-right font-medium">{fmt(net)}</td>
                               <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{fmt(wade)}</td>
@@ -335,8 +335,8 @@ export default function ReportsPage() {
                     <tbody>
                       {atShop.map(row => {
                         const invoice = Number(row.amount_charged) || 0
-                        const partsCost = Number(row.parts_cost) || 0
-                        const afterParts = invoice - partsCost
+                        const partsCharged = Number(row.parts_charged) || 0
+                        const afterParts = invoice - partsCharged
                         const refCut = afterParts * 0.20
                         return (
                           <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
@@ -349,7 +349,7 @@ export default function ReportsPage() {
                             <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                             <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
                             <td className="py-1.5 pr-3 text-right">{fmt(invoice)}</td>
-                            <td className="py-1.5 pr-3 text-right text-red-500">{fmt(partsCost)}</td>
+                            <td className="py-1.5 pr-3 text-right text-red-500">{fmt(partsCharged)}</td>
                             <td className="py-1.5 text-right text-green-700 font-medium">{fmt(refCut)}</td>
                           </tr>
                         )
