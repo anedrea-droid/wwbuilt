@@ -607,9 +607,9 @@ export default function WorkOrderDetail() {
           const invoice = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : estimatedTotal
           const partsOurCost = parts.reduce((sum, p) => sum + (Number(p.cost) * Number(p.quantity)), 0)
           const isReferral = customer?.source === 'referral'
-          const referralCut = isReferral ? invoice * 0.20 : 0
-          const afterReferral = invoice - referralCut
-          const netToSplit = afterReferral - partsOurCost
+          const afterParts = invoice - partsOurCost
+          const referralCut = isReferral ? afterParts * 0.20 : 0
+          const netToSplit = afterParts - referralCut
           const wadePayout = netToSplit * 0.60
           const waynePayout = netToSplit * 0.40
           return (
@@ -621,16 +621,16 @@ export default function WorkOrderDetail() {
                 </span>
                 <span className="font-medium">${invoice.toFixed(2)}</span>
               </div>
-              {isReferral && (
-                <div className="flex justify-between text-red-600">
-                  <span>Referral Shop Cut (20%) - {customer?.referralShop || 'Other Shop'}</span>
-                  <span>-${referralCut.toFixed(2)}</span>
-                </div>
-              )}
               <div className="flex justify-between text-red-600">
                 <span>Parts Cost (WW paid)</span>
                 <span>-${partsOurCost.toFixed(2)}</span>
               </div>
+              {isReferral && (
+                <div className="flex justify-between text-red-600">
+                  <span>Referral Shop Cut (20% of net) - {customer?.referralShop || 'Other Shop'}</span>
+                  <span>-${referralCut.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold border-t pt-2">
                 <span>Net to Split</span>
                 <span>${netToSplit.toFixed(2)}</span>
