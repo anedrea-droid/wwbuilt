@@ -23,12 +23,12 @@ interface SearchResult {
 }
 
 const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
-  'pending':       { label: 'Pending',         cls: 'bg-gray-100 text-gray-600' },
-  'in-progress':   { label: 'In Progress',      cls: 'bg-blue-100 text-blue-700' },
-  'waiting-parts': { label: 'Waiting Parts',    cls: 'bg-amber-100 text-amber-700' },
-  'complete':      { label: 'Ready for Pickup', cls: 'bg-green-100 text-green-700' },
-  'at-shop': { label: 'At Referral Shop', cls: 'bg-purple-100 text-purple-700' },
-  'picked-up':     { label: 'Picked Up',        cls: 'bg-slate-100 text-slate-500' },
+  'pending':       { label: 'Pending',           cls: 'bg-gray-100 text-gray-600' },
+  'in-progress':   { label: 'In Progress',        cls: 'bg-blue-100 text-blue-700' },
+  'waiting-parts': { label: 'Waiting Parts',      cls: 'bg-amber-100 text-amber-700' },
+  'complete':      { label: 'Ready for Pickup',   cls: 'bg-green-100 text-green-700' },
+  'at-shop':       { label: 'At Referral Shop',   cls: 'bg-purple-100 text-purple-700' },
+  'picked-up':     { label: 'Picked Up',          cls: 'bg-slate-100 text-slate-500' },
 }
 
 export default function SearchPage() {
@@ -40,7 +40,7 @@ export default function SearchPage() {
     if (q.trim().length < 2) { setResults(null); return }
     setLoading(true)
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+      const res = await fetch('/api/search?q=' + encodeURIComponent(q))
       setResults(await res.json())
     } finally {
       setLoading(false)
@@ -68,7 +68,7 @@ export default function SearchPage() {
           autoFocus
           value={query}
           onChange={handleChange}
-          placeholder="Search customers, equipment, work orders…"
+          placeholder="Search customers, equipment, work orders..."
           className="pl-10 h-12 text-base"
         />
       </div>
@@ -78,7 +78,7 @@ export default function SearchPage() {
       )}
 
       {loading && (
-        <p className="text-sm text-slate-400 text-center py-4">Searching…</p>
+        <p className="text-sm text-slate-400 text-center py-4">Searching...</p>
       )}
 
       {!loading && results && !hasResults && query.length >= 2 && (
@@ -91,7 +91,6 @@ export default function SearchPage() {
 
       {!loading && results && hasResults && (
         <div className="space-y-5">
-          {/* Customers */}
           {results.customers.length > 0 && (
             <section>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
@@ -99,7 +98,7 @@ export default function SearchPage() {
               </p>
               <div className="space-y-1.5">
                 {results.customers.map(c => (
-                  <Link key={c.id} href={`/customers/${c.id}`}>
+                  <Link key={c.id} href={'/customers/' + c.id}>
                     <Card className="hover:shadow-md transition-shadow cursor-pointer">
                       <CardContent className="p-3 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
@@ -121,7 +120,6 @@ export default function SearchPage() {
             </section>
           )}
 
-          {/* Equipment */}
           {results.equipment.length > 0 && (
             <section>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
@@ -129,14 +127,14 @@ export default function SearchPage() {
               </p>
               <div className="space-y-1.5">
                 {results.equipment.map(e => (
-                  <Link key={e.id} href={e.customer ? `/customers/${e.customer.id}` : '#'}>
+                  <Link key={e.id} href={e.customer ? '/customers/' + e.customer.id : '#'}>
                     <Card className="hover:shadow-md transition-shadow cursor-pointer">
                       <CardContent className="p-3 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0">
                           <Wrench className="h-4 w-4 text-slate-500" />
                         </div>
                         <div className="flex-1">
-                          <div className="font-medium text-slate-800">{e.type} — {e.make} {e.model}</div>
+                          <div className="font-medium text-slate-800">{e.type} - {e.make} {e.model}</div>
                           <div className="text-sm text-slate-500">
                             {e.customer?.name}
                             {e.serialNumber && <span className="ml-2 text-xs text-slate-400">S/N: {e.serialNumber}</span>}
@@ -151,7 +149,6 @@ export default function SearchPage() {
             </section>
           )}
 
-          {/* Work Orders */}
           {results.workOrders.length > 0 && (
             <section>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
@@ -159,9 +156,9 @@ export default function SearchPage() {
               </p>
               <div className="space-y-1.5">
                 {results.workOrders.map(wo => {
-                  const scfg = STATUS_CFG[wo.status]
+                  const scfg = STATUS_CFG[wo.status] ?? { label: wo.status, cls: 'bg-gray-100 text-gray-600' }
                   return (
-                    <Link key={wo.id} href={`/work-orders/${wo.id}`}>
+                    <Link key={wo.id} href={'/work-orders/' + wo.id}>
                       <Card className="hover:shadow-md transition-shadow cursor-pointer">
                         <CardContent className="p-3 flex items-center gap-3">
                           <div className="flex-1 min-w-0">
@@ -171,9 +168,9 @@ export default function SearchPage() {
                             </div>
                             <div className="text-sm text-slate-600">{wo.customer?.name}</div>
                             {wo.equipment && (
-                              <div className="text-xs text-slate-400">{wo.equipment.type} — {wo.equipment.make} {wo.equipment.model}</div>
+                              <div className="text-xs text-slate-400">{wo.equipment.type} - {wo.equipment.make} {wo.equipment.model}</div>
                             )}
-                            {wo.complaint && <p className="text-xs text-slate-400 truncate italic">"{wo.complaint}"</p>}
+                            {wo.complaint && <p className="text-xs text-slate-400 truncate italic">&quot;{wo.complaint}&quot;</p>}
                           </div>
                           <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
                         </CardContent>
