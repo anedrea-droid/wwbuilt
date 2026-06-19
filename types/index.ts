@@ -1,5 +1,5 @@
 export type CustomerSource = 'own' | 'referral'
-export type WorkOrderStatus = 'pending' | 'in-progress' | 'waiting-parts' | 'complete' | 'picked-up'
+export type WorkOrderStatus = 'pending' | 'in-progress' | 'waiting-parts' | 'complete' | 'at-shop' | 'picked-up'
 export type TechName = 'Wade' | 'Wayne' | 'Both'
 export type PaymentMethod = 'cash' | 'check' | 'card' | 'other' | ''
 export type PartStatus = 'ordered' | 'received'
