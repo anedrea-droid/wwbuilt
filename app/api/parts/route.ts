@@ -24,8 +24,8 @@ export async function POST(req: Request) {
     const vals = [id, body.workOrderId, body.name || '', body.partNumber || '', body.supplier || '', body.quantity || 1, body.cost || 0, body.price || 0, body.dateOrdered || new Date().toISOString().split('T')[0]]
     const { rows } = await pool.query(sql, vals)
 
-    // Auto-update work order status to waiting-parts if not already in a finished state
-    if (body.workOrderId) {
+    // Auto-update work order status to waiting-parts only if part is on order (not from shop stock)
+    if (body.workOrderId && body.status !== 'received') {
       await pool.query(
         "UPDATE work_orders SET status = 'waiting-parts' WHERE id = $1 AND status NOT IN ('complete', 'at-shop', 'picked-up')",
         [body.workOrderId]
