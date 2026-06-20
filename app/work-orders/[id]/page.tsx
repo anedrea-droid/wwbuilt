@@ -45,7 +45,7 @@ export default function WorkOrderDetail() {
   const [catalogSearch, setCatalogSearch] = useState('')
   const [newPart, setNewPart] = useState({
     name: '', partNumber: '', supplier: '', quantity: 1,
-    cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0],
+    cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false,
   })
   const [saving, setSaving] = useState(false)
   const [editingPart, setEditingPart] = useState<string | null>(null)
@@ -99,14 +99,18 @@ export default function WorkOrderDetail() {
   }
 
   async function addPart() {
+    const today = new Date().toISOString().split('T')[0]
+    const partPayload = newPart.fromShop
+      ? { ...newPart, workOrderId: id, status: 'received', date_received: today }
+      : { ...newPart, workOrderId: id }
     const res = await fetch('/api/parts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newPart, workOrderId: id }),
+      body: JSON.stringify(partPayload),
     })
     const part = await res.json()
     setParts(p => [...p, part])
-    setNewPart({ name: '', partNumber: '', supplier: '', quantity: 1, cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0] })
+    setNewPart({ name: '', partNumber: '', supplier: '', quantity: 1, cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false })
     setShowAddPart(false)
     setShowCatalog(false)
     const woRes = await fetch('/api/work-orders/' + id)
@@ -346,7 +350,24 @@ export default function WorkOrderDetail() {
 
         {showAddPart && (
           <div className="border rounded-lg p-3 mb-4 bg-orange-50 space-y-3">
-            <p className="text-sm font-medium text-gray-700">New Part</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">New Part</p>
+              <div className="flex rounded-lg overflow-hidden border text-xs font-medium">
+                <button onClick={() => setNewPart(p => ({ ...p, fromShop: false }))}
+                  className={'px-3 py-1 ' + (!newPart.fromShop ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+                  On Order
+                </button>
+                <button onClick={() => setNewPart(p => ({ ...p, fromShop: true }))}
+                  className={'px-3 py-1 ' + (newPart.fromShop ? 'bg-green-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+                  From Shop
+                </button>
+              </div>
+            </div>
+            {newPart.fromShop && (
+              <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
+                Part is in stock - will be marked as received immediately.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-500">Part Name *</label>
@@ -378,16 +399,18 @@ export default function WorkOrderDetail() {
                 <input type="number" value={newPart.price} onChange={e => setNewPart(p => ({ ...p, price: e.target.value }))}
                   className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
               </div>
-              <div>
-                <label className="text-xs text-gray-500">Date Ordered</label>
-                <input type="date" value={newPart.dateOrdered} onChange={e => setNewPart(p => ({ ...p, dateOrdered: e.target.value }))}
-                  className="w-full border rounded px-2 py-1 text-sm" />
-              </div>
+              {!newPart.fromShop && (
+                <div>
+                  <label className="text-xs text-gray-500">Date Ordered</label>
+                  <input type="date" value={newPart.dateOrdered} onChange={e => setNewPart(p => ({ ...p, dateOrdered: e.target.value }))}
+                    className="w-full border rounded px-2 py-1 text-sm" />
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={addPart} disabled={!newPart.name}
-                className="bg-orange-500 text-white text-sm px-4 py-1 rounded-lg hover:bg-orange-600 disabled:opacity-50">
-                Add Part
+                className={'text-sm px-4 py-1 rounded-lg disabled:opacity-50 text-white ' + (newPart.fromShop ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-500 hover:bg-orange-600')}>
+                {newPart.fromShop ? 'Add from Stock' : 'Add Part'}
               </button>
               <button onClick={() => setShowAddPart(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
             </div>
