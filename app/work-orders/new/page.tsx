@@ -24,7 +24,7 @@ export default function NewWorkOrder() {
   // Form state
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('')
-  const [technician, setTechnician] = useState<'Wade' | 'Wayne' | 'Both'>('Wade')
+  const [technician, setTechnician] = useState<'Wade' | 'Wayne'>('Wade')
   const [complaint, setComplaint] = useState('')
   const [dateIn, setDateIn] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
@@ -128,12 +128,12 @@ export default function NewWorkOrder() {
               <>
                 <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a customer…" />
+                    <SelectValue placeholder="Select a customerâ€¦" />
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map(c => (
                       <SelectItem key={c.id} value={c.id}>
-                        {c.name} {c.phone ? `— ${c.phone}` : ''}
+                        {c.name} {c.phone ? `â€” ${c.phone}` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -167,7 +167,7 @@ export default function NewWorkOrder() {
                         className={cn("flex-1 py-1.5 rounded text-sm font-medium border transition-colors",
                           newCustSource === s ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                         )}>
-                        {s === 'own' ? '👤 Our Customer' : '🔄 Referral'}
+                        {s === 'own' ? 'ðŸ‘¤ Our Customer' : 'ðŸ”„ Referral'}
                       </button>
                     ))}
                   </div>
@@ -206,12 +206,12 @@ export default function NewWorkOrder() {
                   {equipment.length > 0 ? (
                     <Select value={selectedEquipmentId} onValueChange={setSelectedEquipmentId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select equipment…" />
+                        <SelectValue placeholder="Select equipmentâ€¦" />
                       </SelectTrigger>
                       <SelectContent>
                         {equipment.map(e => (
                           <SelectItem key={e.id} value={e.id}>
-                            {e.type} — {e.make} {e.model}
+                            {e.type} â€” {e.make} {e.model}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -238,11 +238,11 @@ export default function NewWorkOrder() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs">Make *</Label>
-                      <Input value={newEquipMake} onChange={e => setNewEquipMake(e.target.value)} placeholder="Husqvarna, STIHL…" />
+                      <Input value={newEquipMake} onChange={e => setNewEquipMake(e.target.value)} placeholder="Husqvarna, STIHLâ€¦" />
                     </div>
                     <div>
                       <Label className="text-xs">Model</Label>
-                      <Input value={newEquipModel} onChange={e => setNewEquipModel(e.target.value)} placeholder="YTH24V48…" />
+                      <Input value={newEquipModel} onChange={e => setNewEquipModel(e.target.value)} placeholder="YTH24V48â€¦" />
                     </div>
                   </div>
                   <div>
@@ -271,7 +271,7 @@ export default function NewWorkOrder() {
               <div>
                 <Label className="text-xs font-semibold">Assigned To *</Label>
                 <div className="flex gap-2 mt-1">
-                  {(['Wade', 'Wayne', 'Both'] as const).map(t => (
+                  {(['Wade', 'Wayne'] as const).map(t => (
                     <button key={t} onClick={() => setTechnician(t)}
                       className={cn("flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors",
                         technician === t
@@ -307,7 +307,7 @@ export default function NewWorkOrder() {
                 <Textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
-                  placeholder="Any other notes…"
+                  placeholder="Any other notesâ€¦"
                   rows={2}
                   className="mt-1"
                 />
@@ -324,7 +324,7 @@ export default function NewWorkOrder() {
             disabled={!canSubmit || saving}
             onClick={handleSubmit}
           >
-            {saving ? 'Creating…' : 'Create Work Order'}
+            {saving ? 'Creatingâ€¦' : 'Create Work Order'}
           </Button>
         )}
       </div>
