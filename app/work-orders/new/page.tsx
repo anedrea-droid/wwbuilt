@@ -133,7 +133,7 @@ export default function NewWorkOrder() {
                   <SelectContent>
                     {customers.map(c => (
                       <SelectItem key={c.id} value={c.id}>
-                        {c.name} {c.phone ? `Ã¢â‚¬â€ ${c.phone}` : ''}
+                        {c.name}{c.phone ? ' - ' + c.phone : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -167,7 +167,7 @@ export default function NewWorkOrder() {
                         className={cn("flex-1 py-1.5 rounded text-sm font-medium border transition-colors",
                           newCustSource === s ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                         )}>
-                        {s === 'own' ? 'Ã°Å¸â€˜Â¤ Our Customer' : 'Ã°Å¸â€â€ž Referral'}
+                        {s === 'own' ? 'Our Customer' : 'Referral'}
                       </button>
                     ))}
                   </div>
@@ -211,7 +211,7 @@ export default function NewWorkOrder() {
                       <SelectContent>
                         {equipment.map(e => (
                           <SelectItem key={e.id} value={e.id}>
-                            {e.type} Ã¢â‚¬â€ {e.make} {e.model}
+                            {e.type} - {e.make} {e.model}
                           </SelectItem>
                         ))}
                       </SelectContent>
