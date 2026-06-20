@@ -128,12 +128,12 @@ export default function NewWorkOrder() {
               <>
                 <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a customerâ€¦" />
+                    <SelectValue placeholder="Select a customer..." />
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map(c => (
                       <SelectItem key={c.id} value={c.id}>
-                        {c.name} {c.phone ? `â€” ${c.phone}` : ''}
+                        {c.name} {c.phone ? `Ã¢â‚¬â€ ${c.phone}` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -167,7 +167,7 @@ export default function NewWorkOrder() {
                         className={cn("flex-1 py-1.5 rounded text-sm font-medium border transition-colors",
                           newCustSource === s ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                         )}>
-                        {s === 'own' ? 'ðŸ‘¤ Our Customer' : 'ðŸ”„ Referral'}
+                        {s === 'own' ? 'Ã°Å¸â€˜Â¤ Our Customer' : 'Ã°Å¸â€â€ž Referral'}
                       </button>
                     ))}
                   </div>
@@ -206,12 +206,12 @@ export default function NewWorkOrder() {
                   {equipment.length > 0 ? (
                     <Select value={selectedEquipmentId} onValueChange={setSelectedEquipmentId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select equipmentâ€¦" />
+                        <SelectValue placeholder="Select equipment..." />
                       </SelectTrigger>
                       <SelectContent>
                         {equipment.map(e => (
                           <SelectItem key={e.id} value={e.id}>
-                            {e.type} â€” {e.make} {e.model}
+                            {e.type} Ã¢â‚¬â€ {e.make} {e.model}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -238,11 +238,11 @@ export default function NewWorkOrder() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs">Make *</Label>
-                      <Input value={newEquipMake} onChange={e => setNewEquipMake(e.target.value)} placeholder="Husqvarna, STIHLâ€¦" />
+                      <Input value={newEquipMake} onChange={e => setNewEquipMake(e.target.value)} placeholder="Husqvarna, STIHL..." />
                     </div>
                     <div>
                       <Label className="text-xs">Model</Label>
-                      <Input value={newEquipModel} onChange={e => setNewEquipModel(e.target.value)} placeholder="YTH24V48â€¦" />
+                      <Input value={newEquipModel} onChange={e => setNewEquipModel(e.target.value)} placeholder="YTH24V48..." />
                     </div>
                   </div>
                   <div>
@@ -307,7 +307,7 @@ export default function NewWorkOrder() {
                 <Textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
-                  placeholder="Any other notesâ€¦"
+                  placeholder="Any other notes..."
                   rows={2}
                   className="mt-1"
                 />
@@ -324,7 +324,7 @@ export default function NewWorkOrder() {
             disabled={!canSubmit || saving}
             onClick={handleSubmit}
           >
-            {saving ? 'Creatingâ€¦' : 'Create Work Order'}
+            {saving ? 'Creating...' : 'Create Work Order'}
           </Button>
         )}
       </div>
