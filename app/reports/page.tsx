@@ -375,7 +375,7 @@ export default function ReportsPage() {
           </Section>
 
           {/* Full Referral History */}
-          <Section title="Full Referral Shop History">
+          <Section title="Referral Settlement History">
             {refHistory.length === 0 ? <Empty /> : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -384,19 +384,22 @@ export default function ReportsPage() {
                       <th className="pb-2 pr-3">WO#</th>
                       <th className="pb-2 pr-3">Customer</th>
                       <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Picked Up</th>
-                      <th className="pb-2 pr-3">Returned</th>
                       <th className="pb-2 pr-3 text-right">Invoice</th>
-                      <th className="pb-2 pr-3 text-center">Shop Paid</th>
-                      <th className="pb-2 text-right">Shop Cut</th>
+                      <th className="pb-2 pr-3 text-right">Parts Chg</th>
+                      <th className="pb-2 pr-3 text-right">Net</th>
+                      <th className="pb-2 pr-3 text-right">Shop 20%</th>
+                      <th className="pb-2 pr-3 text-right">WW Rcvd</th>
+                      <th className="pb-2 pr-3 text-center">Status</th>
+                      <th className="pb-2 text-right">Date Settled</th>
                     </tr>
                   </thead>
                   <tbody>
                     {refHistory.map(row => {
                       const invoice = Number(row.amount_charged) || 0
-                      const partsCost = Number(row.parts_cost) || 0
-                      const afterParts = invoice - partsCost
-                      const refCut = afterParts * 0.20
+                      const partsCharged = Number(row.parts_charged) || 0
+                      const afterParts = invoice - partsCharged
+                      const refCut = afterParts > 0 ? afterParts * 0.20 : 0
+                      const wwRcvd = invoice > 0 ? (afterParts > 0 ? afterParts * 0.80 + partsCharged : invoice) : 0
                       return (
                         <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-1.5 pr-3">
@@ -404,17 +407,19 @@ export default function ReportsPage() {
                               {String(row.order_number)}
                             </Link>
                           </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_pickup_date)}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
-                          <td className="py-1.5 pr-3 text-right">{fmt(invoice)}</td>
+                          <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                          <td className="py-1.5 pr-3 text-right font-medium">{invoice > 0 ? fmt(invoice) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right text-gray-500">{partsCharged > 0 ? fmt(partsCharged) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right">{invoice > 0 ? fmt(afterParts) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right text-orange-600">{invoice > 0 ? fmt(refCut) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right text-green-700 font-medium">{invoice > 0 ? fmt(wwRcvd) : '-'}</td>
                           <td className="py-1.5 pr-3 text-center">
                             <span className={'text-xs px-2 py-0.5 rounded-full ' + (row.shop_payment_received ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-600')}>
-                              {row.shop_payment_received ? 'Paid' : 'Pending'}
+                              {row.shop_payment_received ? 'Settled' : 'Pending'}
                             </span>
                           </td>
-                          <td className="py-1.5 text-right text-green-700">{invoice > 0 ? fmt(refCut) : '-'}</td>
+                          <td className="py-1.5 text-right text-gray-500 text-xs">{row.shop_payment_date ? String(row.shop_payment_date).slice(0,10) : '-'}</td>
                         </tr>
                       )
                     })}
