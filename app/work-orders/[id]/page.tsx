@@ -9,6 +9,7 @@ interface WorkOrder {
   workDone: string; laborHours: number; laborRate: number; dateIn: string
   referralPickupDate?: string; referralDropoffDate?: string
   shopPaymentAmount?: number; shopPaymentDate?: string; shopPaymentReceived?: boolean
+  commissionPaid?: boolean; commissionPaidDate?: string
   dateComplete: string; datePickedUp: string; notes: string
   paymentMethod: string; amountCharged: number; amountPaid: number
 }
@@ -55,7 +56,8 @@ export default function WorkOrderDetail() {
     const d = (v: unknown) => v ? String(v).slice(0, 10) : ''
     return { ...data, dateIn: d(data.dateIn), dateComplete: d(data.dateComplete),
       datePickedUp: d(data.datePickedUp), referralPickupDate: d(data.referralPickupDate),
-      referralDropoffDate: d(data.referralDropoffDate), shopPaymentDate: d(data.shopPaymentDate) }
+      referralDropoffDate: d(data.referralDropoffDate), shopPaymentDate: d(data.shopPaymentDate),
+      commissionPaidDate: d(data.commissionPaidDate) }
   }
 
   useEffect(() => {
@@ -95,6 +97,8 @@ export default function WorkOrderDetail() {
       shop_payment_amount: form.shopPaymentAmount,
       shop_payment_date: form.shopPaymentDate,
       shop_payment_received: form.shopPaymentReceived,
+      commission_paid: form.commissionPaid,
+      commission_paid_date: form.commissionPaidDate,
     }
     const res = await fetch('/api/work-orders/' + id, {
       method: 'PATCH',
@@ -730,6 +734,53 @@ export default function WorkOrderDetail() {
           </div>
           {!editing && wo.referralDropoffDate && !wo.shopPaymentReceived && (
             <p className="text-xs text-orange-600 font-medium">Payment outstanding - equipment returned to shop</p>
+          )}
+
+          {/* Commission to Shop */}
+          {wo.shopPaymentReceived && (
+            <div className={'mt-3 pt-3 border-t-2 border-dashed ' + (wo.commissionPaid ? 'border-green-300' : 'border-orange-300')}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">20% Commission to Shop</h3>
+                {wo.commissionPaid
+                  ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">PAID</span>
+                  : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">OWED</span>
+                }
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Commission Owed</label>
+                  <p className="text-sm font-medium text-orange-700">
+                    {(() => {
+                      const partsCharged = parts.reduce((s, p) => s + Number(p.price) * Number(p.quantity), 0)
+                      const shopAmt = Number(wo.shopPaymentAmount) || 0
+                      const net = shopAmt > 0 ? shopAmt - partsCharged : 0
+                      return '$' + (net * 0.20).toFixed(2)
+                    })()}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Date Paid to Shop</label>
+                  {editing ? (
+                    <input type="date" value={form.commissionPaidDate || ''}
+                      onChange={e => setForm(f => ({ ...f, commissionPaidDate: e.target.value }))}
+                      className="w-full border rounded px-2 py-1 text-sm" />
+                  ) : (
+                    <p className="text-sm text-gray-800">{wo.commissionPaidDate ? String(wo.commissionPaidDate).slice(0,10) : '-'}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Mark as Paid</label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={!!form.commissionPaid}
+                      onChange={e => setForm(f => ({ ...f, commissionPaid: e.target.checked }))}
+                      disabled={!editing} className="w-4 h-4 accent-green-600" />
+                    <span className={form.commissionPaid ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
+                      {form.commissionPaid ? 'Paid' : 'Not yet paid'}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
