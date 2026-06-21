@@ -35,6 +35,7 @@ export async function GET(req: Request) {
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'WHERE wo.amount_charged > 0 AND (wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
+        'AND (c.source IS NULL OR c.source != \'referral\') ' +
         'ORDER BY wo.date_in DESC'
       )
       return NextResponse.json(rows)
