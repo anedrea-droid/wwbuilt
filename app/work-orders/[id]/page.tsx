@@ -599,20 +599,51 @@ export default function WorkOrderDetail() {
             <span>${(laborTotal + partsTotal).toFixed(2)}</span>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Payment Method</label>
-            {editing ? (
-              <select value={form.paymentMethod || ''} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
-                className="w-full border rounded px-2 py-1 text-sm">
-                {['', 'cash', 'check', 'card', 'other'].map(m => (
-                  <option key={m} value={m}>{m || '-'}</option>
-                ))}
-              </select>
-            ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '-'}</p>}
+        {/* Payment Section */}
+        <div className={"rounded-lg border-2 p-4 mt-2 " + (
+          Number(wo.amountCharged) > 0 && Number(wo.amountPaid) >= Number(wo.amountCharged)
+            ? "border-green-300 bg-green-50"
+            : Number(wo.amountCharged) > 0 && Number(wo.amountPaid) > 0
+            ? "border-yellow-300 bg-yellow-50"
+            : Number(wo.amountCharged) > 0
+            ? "border-orange-300 bg-orange-50"
+            : "border-gray-200 bg-gray-50"
+        )}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">Customer Payment</h3>
+            {Number(wo.amountCharged) > 0 && Number(wo.amountPaid) >= Number(wo.amountCharged) ? (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">PAID IN FULL</span>
+            ) : Number(wo.amountCharged) > 0 && Number(wo.amountPaid) > 0 ? (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">PARTIAL PAYMENT</span>
+            ) : Number(wo.amountCharged) > 0 ? (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">UNPAID</span>
+            ) : (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">NOT INVOICED</span>
+            )}
           </div>
-          {field('Amount Charged ($)', 'amountCharged', 'number')}
-          {field('Amount Paid ($)', 'amountPaid', 'number')}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Payment Method</label>
+              {editing ? (
+                <select value={form.paymentMethod || ''} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm">
+                  {['', 'cash', 'check', 'card', 'other'].map(m => (
+                    <option key={m} value={m}>{m || '-'}</option>
+                  ))}
+                </select>
+              ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '-'}</p>}
+            </div>
+            {field('Amount Charged ($)', 'amountCharged', 'number')}
+            {field('Amount Paid ($)', 'amountPaid', 'number')}
+          </div>
+          {Number(wo.amountCharged) > 0 && Number(wo.amountPaid) < Number(wo.amountCharged) && (
+            <div className="mt-3 pt-3 border-t border-dashed border-gray-300 flex justify-between items-center">
+              <span className="text-sm font-medium text-orange-700">Balance Due</span>
+              <span className="text-lg font-bold text-orange-700">
+                ${(Number(wo.amountCharged) - Number(wo.amountPaid)).toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
         {editing && (
           <button onClick={saveWorkOrder} disabled={saving}
