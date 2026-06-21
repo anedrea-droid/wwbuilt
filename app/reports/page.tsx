@@ -157,7 +157,7 @@ export default function ReportsPage() {
                           <th className="pb-2 pr-3">Customer</th>
                           <th className="pb-2 pr-3">Date</th>
                           <th className="pb-2 pr-3 text-right">Invoice</th>
-                          <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                          <th className="pb-2 pr-3 text-right">Parts Chg</th>
                           <th className="pb-2 pr-3 text-right">Ref Cut</th>
                           <th className="pb-2 pr-3 text-right">Net Split</th>
                           <th className="pb-2 pr-3 text-right text-orange-600">Wade</th>
@@ -166,8 +166,11 @@ export default function ReportsPage() {
                       </thead>
                       <tbody>
                         {payouts.map((row) => {
-                          const invoice = Number(row.amount_charged) || 0
                           const partsCharged = Number(row.parts_charged) || 0
+                          const amtCharged = Number(row.amount_charged) || 0
+                          const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
+                          const invoice = amtCharged > 0 ? amtCharged : laborEst + partsCharged
+                          const isEstimated = amtCharged === 0
                           const afterParts = invoice - partsCharged
                           const isRef = row.customer_source === 'referral'
                           const refCut = isRef ? afterParts * 0.20 : 0
@@ -187,7 +190,9 @@ export default function ReportsPage() {
                               </td>
                               <td className="py-1.5 pr-3 text-gray-700">{String(row.customer_name || '-')}</td>
                               <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
-                              <td className="py-1.5 pr-3 text-right">{fmt(invoice)}</td>
+                              <td className="py-1.5 pr-3 text-right">
+                                {fmt(invoice)}{isEstimated && <span className="text-gray-400 text-xs ml-1">*</span>}
+                              </td>
                               <td className="py-1.5 pr-3 text-right text-red-500">{fmt(partsCharged)}</td>
                               <td className="py-1.5 pr-3 text-right text-red-500">{isRef ? fmt(refCut) : '-'}</td>
                               <td className="py-1.5 pr-3 text-right font-medium">{fmt(net)}</td>
@@ -210,6 +215,7 @@ export default function ReportsPage() {
                       </tfoot>
                     </table>
                   </div>
+                  <p className="text-xs text-gray-400 mt-1 mb-1">* Invoice estimated from labor + parts (Amount Charged not yet entered on WO)</p>
                   <div className="grid grid-cols-3 gap-3 mt-2">
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-gray-500 mb-1">Total Revenue</div>
@@ -283,7 +289,7 @@ export default function ReportsPage() {
                       <th className="pb-2 pr-3">Month</th>
                       <th className="pb-2 pr-3 text-right">Jobs</th>
                       <th className="pb-2 pr-3 text-right">Revenue</th>
-                      <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                      <th className="pb-2 pr-3 text-right">Parts Chg</th>
                       <th className="pb-2 text-right">Gross Margin</th>
                     </tr>
                   </thead>
@@ -328,7 +334,7 @@ export default function ReportsPage() {
                         <th className="pb-2 pr-3">Equipment</th>
                         <th className="pb-2 pr-3">Returned</th>
                         <th className="pb-2 pr-3 text-right">Invoice</th>
-                        <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                        <th className="pb-2 pr-3 text-right">Parts Chg</th>
                         <th className="pb-2 text-right text-green-700">WW Owes</th>
                       </tr>
                     </thead>
@@ -390,7 +396,9 @@ export default function ReportsPage() {
                       <th className="pb-2 pr-3 text-right">Shop 20%</th>
                       <th className="pb-2 pr-3 text-right">WW Rcvd</th>
                       <th className="pb-2 pr-3 text-center">Status</th>
-                      <th className="pb-2 text-right">Date Settled</th>
+                      <th className="pb-2 pr-3 text-right">Date Settled</th>
+                      <th className="pb-2 pr-3 text-center">Comm. Paid</th>
+                      <th className="pb-2 text-right">Comm. Date</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -419,7 +427,15 @@ export default function ReportsPage() {
                               {row.shop_payment_received ? 'Settled' : 'Pending'}
                             </span>
                           </td>
-                          <td className="py-1.5 text-right text-gray-500 text-xs">{row.shop_payment_date ? String(row.shop_payment_date).slice(0,10) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right text-gray-500 text-xs">{row.shop_payment_date ? String(row.shop_payment_date).slice(0,10) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-center">
+                            {row.shop_payment_received ? (
+                              <span className={'text-xs px-2 py-0.5 rounded-full ' + (row.commission_paid ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-600')}>
+                                {row.commission_paid ? 'Paid' : 'Owed'}
+                              </span>
+                            ) : <span className="text-gray-300 text-xs">-</span>}
+                          </td>
+                          <td className="py-1.5 text-right text-gray-500 text-xs">{row.commission_paid_date ? String(row.commission_paid_date).slice(0,10) : '-'}</td>
                         </tr>
                       )
                     })}
