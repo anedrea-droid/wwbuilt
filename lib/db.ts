@@ -69,6 +69,8 @@ export function toWorkOrder(r: Record<string, unknown>) {
     shopPaymentAmount: r.shop_payment_amount,
     shopPaymentDate: r.shop_payment_date,
     shopPaymentReceived: r.shop_payment_received ?? false,
+    commissionPaid: r.commission_paid ?? false,
+    commissionPaidDate: r.commission_paid_date,
     createdAt: r.created_at,
   }
 }
