@@ -34,8 +34,16 @@ export async function PATCH(
       'referral_pickup_date', 'referral_dropoff_date',
       'shop_payment_amount', 'shop_payment_date', 'shop_payment_received',
     ]
+    const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date']
+    const numericFields = ['labor_hours','labor_rate','amount_charged','amount_paid','shop_payment_amount']
     for (const key of allowed) {
-      if (body[key] !== undefined) { fields.push(key + ' = $' + idx++); values.push(body[key]) }
+      if (body[key] !== undefined) {
+        let val = body[key]
+        if (dateFields.includes(key) && val === '') val = null
+        if (numericFields.includes(key) && (val === '' || val === null)) val = null
+        fields.push(key + ' = $' + idx++)
+        values.push(val)
+      }
     }
     if (fields.length === 0) return NextResponse.json({ error: 'No fields' }, { status: 400 })
     values.push(id)
