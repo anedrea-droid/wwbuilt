@@ -580,7 +580,19 @@ export default function WorkOrderDetail() {
       </div>
 
       <div className="bg-white rounded-xl shadow p-4 space-y-4">
-        <h2 className="font-semibold text-gray-700">Financials</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">Financials</h2>
+          {editing ? (
+            <div className="flex gap-2">
+              <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={saveWorkOrder} disabled={saving} className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded hover:bg-orange-600">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)} className="text-xs text-orange-500 hover:underline">Edit</button>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-4">
           {field('Labor Hours', 'laborHours', 'number')}
           {field('Labor Rate ($/hr)', 'laborRate', 'number')}
