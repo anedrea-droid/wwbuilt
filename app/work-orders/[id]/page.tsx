@@ -51,9 +51,16 @@ export default function WorkOrderDetail() {
   const [editingPart, setEditingPart] = useState<string | null>(null)
   const [partForm, setPartForm] = useState<Partial<Part>>({})
 
+  function normalizeDates(data: WorkOrder): WorkOrder {
+    const d = (v: unknown) => v ? String(v).slice(0, 10) : ''
+    return { ...data, dateIn: d(data.dateIn), dateComplete: d(data.dateComplete),
+      datePickedUp: d(data.datePickedUp), referralPickupDate: d(data.referralPickupDate),
+      referralDropoffDate: d(data.referralDropoffDate), shopPaymentDate: d(data.shopPaymentDate) }
+  }
+
   useEffect(() => {
     fetch('/api/work-orders/' + id)
-      .then(r => r.json()).then(data => { setWo(data); setForm(data) })
+      .then(r => r.json()).then(data => { const n = normalizeDates(data); setWo(n); setForm(n) })
     fetch('/api/parts?workOrderId=' + id)
       .then(r => r.json()).then(setParts)
     fetch('/api/saved-parts')
@@ -94,7 +101,7 @@ export default function WorkOrderDetail() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    const updated = await res.json()
+    const updated = normalizeDates(await res.json())
     setWo(updated); setForm(updated); setEditing(false); setSaving(false)
   }
 
@@ -114,8 +121,63 @@ export default function WorkOrderDetail() {
     setShowAddPart(false)
     setShowCatalog(false)
     const woRes = await fetch('/api/work-orders/' + id)
-    const woData = await woRes.json()
+    const woData = normalizeDates(await woRes.json())
     setWo(woData); setForm(woData)
+  }
+
+  function printReceipt() {
+    if (!wo || !customer || !equipment) return
+    const totalCharge = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged)
+      : (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+        + parts.reduce((s, p) => s + Number(p.price) * Number(p.quantity), 0)
+    const html = '<!DOCTYPE html><html><head><title>WW Small Engine - Shop Receipt</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;padding:20px;color:#222;}'
+      + 'h1{font-size:22px;margin:0;}'
+      + '.sub{color:#666;font-size:13px;margin-top:4px;}'
+      + '.header{border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:20px;}'
+      + '.section{margin-bottom:16px;}'
+      + '.label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px;}'
+      + '.value{font-size:14px;margin-top:2px;}'
+      + '.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}'
+      + '.total{background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:14px;margin:20px 0;}'
+      + '.total-label{font-size:13px;color:#444;}'
+      + '.total-amount{font-size:26px;font-weight:bold;margin-top:4px;}'
+      + '.sig{border-top:1px solid #222;margin-top:60px;padding-top:8px;font-size:12px;color:#666;}'
+      + '.sig-row{display:grid;grid-template-columns:2fr 1fr;gap:40px;margin-top:40px;}'
+      + '.sig-line{border-top:1px solid #222;padding-top:6px;font-size:12px;color:#666;}'
+      + '@media print{body{margin:20px;}}'
+      + '</style></head><body>'
+      + '<div class="header">'
+      + '<h1>WW Small Engine</h1>'
+      + '<div class="sub">Shop Return Receipt</div>'
+      + '</div>'
+      + '<div class="grid">'
+      + '<div class="section"><div class="label">Work Order</div><div class="value">' + (wo.orderNumber || '') + '</div></div>'
+      + '<div class="section"><div class="label">Date Returned to Shop</div><div class="value">' + (wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0,10) : '-') + '</div></div>'
+      + '<div class="section"><div class="label">Customer</div><div class="value">' + (customer.name || '') + '</div></div>'
+      + '<div class="section"><div class="label">Referring Shop</div><div class="value">' + (customer.referralShop || '') + '</div></div>'
+      + '</div>'
+      + '<div class="section"><div class="label">Equipment</div><div class="value">' + [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ') + (equipment.serialNumber ? ' | S/N: ' + equipment.serialNumber : '') + '</div></div>'
+      + '<div class="section"><div class="label">Problem Reported</div><div class="value">' + (wo.complaint || '-') + '</div></div>'
+      + '<div class="section"><div class="label">Work Performed</div><div class="value">' + (wo.workDone || '-') + '</div></div>'
+      + '<div class="total">'
+      + '<div class="total-label">Total Amount to Collect from Customer</div>'
+      + '<div class="total-amount">$' + totalCharge.toFixed(2) + '</div>'
+      + (Number(wo.amountCharged) === 0 ? '<div style="font-size:11px;color:#888;margin-top:4px;">* Estimated - final amount may vary</div>' : '')
+      + '</div>'
+      + '<div class="sig">Please collect payment from customer before releasing equipment.</div>'
+      + '<div class="sig-row">'
+      + '<div class="sig-line">Shop Representative Signature</div>'
+      + '<div class="sig-line">Date</div>'
+      + '</div>'
+      + '</body></html>'
+    const w = window.open('', '_blank', 'width=800,height=700')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    w.print()
   }
 
   async function markReceived(partId: string) {
@@ -128,7 +190,7 @@ export default function WorkOrderDetail() {
     const updated = await res.json()
     setParts(p => p.map(x => x.id === partId ? updated : x))
     const woRes = await fetch('/api/work-orders/' + id)
-    const woData = await woRes.json()
+    const woData = normalizeDates(await woRes.json())
     setWo(woData)
     setForm(woData)
   }
@@ -565,9 +627,17 @@ export default function WorkOrderDetail() {
       {/* Referral Shop Tracking - only shown for referral customers */}
       {customer?.source === 'referral' && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl shadow p-4 space-y-4">
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-blue-800">Referral Shop Tracking</h2>
-            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{customer?.referralShop || 'Referral Shop'}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold text-blue-800">Referral Shop Tracking</h2>
+              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{customer?.referralShop || 'Referral Shop'}</span>
+            </div>
+            {wo.referralDropoffDate && (
+              <button onClick={printReceipt}
+                className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
+                Print Shop Receipt
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
