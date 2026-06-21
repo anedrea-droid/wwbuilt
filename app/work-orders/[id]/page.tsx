@@ -626,7 +626,7 @@ export default function WorkOrderDetail() {
             : "border-gray-200 bg-gray-50"
         )}>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Customer Payment</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Invoice</h3>
             {Number(wo.amountCharged) > 0 && Number(wo.amountPaid) >= Number(wo.amountCharged) ? (
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">PAID IN FULL</span>
             ) : Number(wo.amountCharged) > 0 && Number(wo.amountPaid) > 0 ? (
@@ -649,7 +649,7 @@ export default function WorkOrderDetail() {
                 </select>
               ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '-'}</p>}
             </div>
-            {field('Amount Charged ($)', 'amountCharged', 'number')}
+            {field('Invoice Amount ($)', 'amountCharged', 'number')}
             {field('Amount Paid ($)', 'amountPaid', 'number')}
           </div>
           {Number(wo.amountCharged) > 0 && Number(wo.amountPaid) < Number(wo.amountCharged) && (
