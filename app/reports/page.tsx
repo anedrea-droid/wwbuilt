@@ -143,93 +143,115 @@ export default function ReportsPage() {
           {/* Payout Summary */}
           <Section title={'Payout Summary - ' + fromDate + ' to ' + toDate}>
             {payouts.length === 0 ? <Empty /> : (() => {
-              let totalWade = 0
-              let totalWayne = 0
-              let totalReferralCut = 0
-              let totalRevenue = 0
+              const inHouse = payouts.filter(r => r.customer_source !== 'referral')
+              const referral = payouts.filter(r => r.customer_source === 'referral')
+              let ihWade = 0, ihWayne = 0, ihRev = 0
+              let refWade = 0, refWayne = 0, refRev = 0, refCutTotal = 0
+
+              const calcRow = (row: Record<string, unknown>, isRef: boolean) => {
+                const partsCharged = Number(row.parts_charged) || 0
+                const amtCharged = Number(row.amount_charged) || 0
+                const shopAmt = Number(row.shop_payment_amount) || 0
+                const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
+                const invoice = isRef
+                  ? (shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : laborEst + partsCharged)
+                  : (amtCharged > 0 ? amtCharged : laborEst + partsCharged)
+                const isEst = isRef ? shopAmt === 0 : amtCharged === 0
+                const afterParts = invoice - partsCharged
+                const refCut = isRef && afterParts > 0 ? afterParts * 0.20 : 0
+                const net = afterParts - refCut
+                const wade = net * 0.60
+                const wayne = net * 0.40
+                return { invoice, partsCharged, afterParts, refCut, net, wade, wayne, isEst }
+              }
+
+              const tbl = (rows: Record<string, unknown>[], isRef: boolean) => (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                        <th className="pb-2 pr-3">WO#</th>
+                        <th className="pb-2 pr-3">Customer</th>
+                        <th className="pb-2 pr-3">Date</th>
+                        {isRef && <th className="pb-2 pr-3">Shop</th>}
+                        <th className="pb-2 pr-3 text-right">Revenue</th>
+                        <th className="pb-2 pr-3 text-right">Parts Chg</th>
+                        {isRef && <th className="pb-2 pr-3 text-right">Shop 20%</th>}
+                        <th className="pb-2 pr-3 text-right">Net Split</th>
+                        <th className="pb-2 pr-3 text-right text-orange-600">Wade</th>
+                        <th className="pb-2 text-right text-blue-600">Wayne</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(row => {
+                        const c = calcRow(row, isRef)
+                        if (isRef) { refRev += c.invoice; refCutTotal += c.refCut; refWade += c.wade; refWayne += c.wayne }
+                        else { ihRev += c.invoice; ihWade += c.wade; ihWayne += c.wayne }
+                        return (
+                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                            <td className="py-1.5 pr-3">
+                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                                {String(row.order_number)}
+                              </Link>
+                            </td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
+                            {isRef && <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.referral_shop || '-')}</td>}
+                            <td className="py-1.5 pr-3 text-right">
+                              {fmt(c.invoice)}{c.isEst && <span className="text-gray-400 text-xs ml-1">*</span>}
+                            </td>
+                            <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
+                            {isRef && <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.refCut)}</td>}
+                            <td className="py-1.5 pr-3 text-right">{fmt(c.net)}</td>
+                            <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{fmt(c.wade)}</td>
+                            <td className="py-1.5 text-right text-blue-600 font-medium">{fmt(c.wayne)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+
               return (
-                <div className="space-y-2">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                          <th className="pb-2 pr-3">WO#</th>
-                          <th className="pb-2 pr-3">Customer</th>
-                          <th className="pb-2 pr-3">Date</th>
-                          <th className="pb-2 pr-3 text-right">Invoice</th>
-                          <th className="pb-2 pr-3 text-right">Parts Chg</th>
-                          <th className="pb-2 pr-3 text-right">Ref Cut</th>
-                          <th className="pb-2 pr-3 text-right">Net Split</th>
-                          <th className="pb-2 pr-3 text-right text-orange-600">Wade</th>
-                          <th className="pb-2 text-right text-blue-600">Wayne</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payouts.map((row) => {
-                          const partsCharged = Number(row.parts_charged) || 0
-                          const amtCharged = Number(row.amount_charged) || 0
-                          const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
-                          const invoice = amtCharged > 0 ? amtCharged : laborEst + partsCharged
-                          const isEstimated = amtCharged === 0
-                          const afterParts = invoice - partsCharged
-                          const isRef = row.customer_source === 'referral'
-                          const refCut = isRef ? afterParts * 0.20 : 0
-                          const net = afterParts - refCut
-                          const wade = net * 0.60
-                          const wayne = net * 0.40
-                          totalRevenue += invoice
-                          totalReferralCut += refCut
-                          totalWade += wade
-                          totalWayne += wayne
-                          return (
-                            <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                              <td className="py-1.5 pr-3">
-                                <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                  {String(row.order_number)}
-                                </Link>
-                              </td>
-                              <td className="py-1.5 pr-3 text-gray-700">{String(row.customer_name || '-')}</td>
-                              <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
-                              <td className="py-1.5 pr-3 text-right">
-                                {fmt(invoice)}{isEstimated && <span className="text-gray-400 text-xs ml-1">*</span>}
-                              </td>
-                              <td className="py-1.5 pr-3 text-right text-red-500">{fmt(partsCharged)}</td>
-                              <td className="py-1.5 pr-3 text-right text-red-500">{isRef ? fmt(refCut) : '-'}</td>
-                              <td className="py-1.5 pr-3 text-right font-medium">{fmt(net)}</td>
-                              <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{fmt(wade)}</td>
-                              <td className="py-1.5 text-right text-blue-600 font-medium">{fmt(wayne)}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 font-semibold bg-gray-50">
-                          <td colSpan={3} className="pt-2 pr-3 text-gray-600">TOTALS</td>
-                          <td className="pt-2 pr-3 text-right">{fmt(totalRevenue)}</td>
-                          <td className="pt-2 pr-3 text-right text-red-500"></td>
-                          <td className="pt-2 pr-3 text-right text-red-500">{fmt(totalReferralCut)}</td>
-                          <td className="pt-2 pr-3 text-right"></td>
-                          <td className="pt-2 pr-3 text-right text-orange-600">{fmt(totalWade)}</td>
-                          <td className="pt-2 text-right text-blue-600">{fmt(totalWayne)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1 mb-1">* Invoice estimated from labor + parts (Amount Charged not yet entered on WO)</p>
-                  <div className="grid grid-cols-3 gap-3 mt-2">
+                <div className="space-y-5">
+                  {inHouse.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">In-House Jobs</h3>
+                      {tbl(inHouse, false)}
+                      <div className="flex justify-end gap-8 mt-2 pt-2 border-t text-sm">
+                        <span className="text-gray-500">Subtotal</span>
+                        <span className="text-orange-600 font-semibold w-20 text-right">Wade {fmt(ihWade)}</span>
+                        <span className="text-blue-600 font-semibold w-20 text-right">Wayne {fmt(ihWayne)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {referral.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Referral Jobs</h3>
+                      {tbl(referral, true)}
+                      <div className="flex justify-end gap-8 mt-2 pt-2 border-t text-sm">
+                        <span className="text-gray-500">Subtotal</span>
+                        <span className="text-orange-600 font-semibold w-20 text-right">Wade {fmt(refWade)}</span>
+                        <span className="text-blue-600 font-semibold w-20 text-right">Wayne {fmt(refWayne)}</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-3 gap-3 mt-2 pt-3 border-t-2">
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-gray-500 mb-1">Total Revenue</div>
-                      <div className="font-bold text-gray-800">{fmt(totalRevenue)}</div>
+                      <div className="font-bold text-gray-800">{fmt(ihRev + refRev)}</div>
                     </div>
                     <div className="bg-orange-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-orange-600 mb-1">Wade Total</div>
-                      <div className="font-bold text-orange-700">{fmt(totalWade)}</div>
+                      <div className="font-bold text-orange-600">{fmt(ihWade + refWade)}</div>
                     </div>
                     <div className="bg-blue-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-blue-600 mb-1">Wayne Total</div>
-                      <div className="font-bold text-blue-700">{fmt(totalWayne)}</div>
+                      <div className="font-bold text-blue-600">{fmt(ihWayne + refWayne)}</div>
                     </div>
                   </div>
+                  <p className="text-xs text-gray-400">* Revenue estimated from labor + parts (Shop Payment or Invoice Amount not yet entered)</p>
                 </div>
               )
             })()}
