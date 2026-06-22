@@ -36,8 +36,9 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
-        'WHERE wo.amount_charged > 0 AND (wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
-        'AND (c.source IS NULL OR c.source != \'referral\') ' +
+        'WHERE (c.source IS NULL OR c.source != \'referral\') ' +
+        'AND wo.status IN (\'complete\', \'picked-up\') ' +
+        'AND (wo.amount_charged = 0 OR wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
         'ORDER BY wo.date_in DESC'
       )
       return NextResponse.json(rows)
@@ -46,12 +47,12 @@ export async function GET(req: Request) {
     if (type === 'revenue') {
       const { rows } = await pool.query(
         'SELECT TO_CHAR(DATE_TRUNC(\'month\', wo.date_complete), \'YYYY-MM\') as month, ' +
-        'SUM(wo.amount_charged) as revenue, ' +
+        'SUM(CASE WHEN wo.amount_charged > 0 THEN wo.amount_charged ELSE wo.labor_hours * wo.labor_rate END) as revenue, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COUNT(DISTINCT wo.id) as job_count ' +
         'FROM work_orders wo ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE wo.date_complete IS NOT NULL AND wo.amount_charged > 0 ' +
+        'WHERE wo.date_complete IS NOT NULL ' +
         'GROUP BY DATE_TRUNC(\'month\', wo.date_complete) ' +
         'ORDER BY DATE_TRUNC(\'month\', wo.date_complete) DESC ' +
         'LIMIT 24'
