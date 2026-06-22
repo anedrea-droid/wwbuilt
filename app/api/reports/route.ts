@@ -12,6 +12,7 @@ export async function GET(req: Request) {
     if (type === 'payouts') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_complete, wo.amount_charged, wo.labor_hours, wo.labor_rate, ' +
+        'wo.shop_payment_amount, ' +
         'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
