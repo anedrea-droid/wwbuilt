@@ -232,6 +232,7 @@ export default function ReportsPage() {
                       {tbl(referral, true)}
                       <div className="flex justify-end gap-8 mt-2 pt-2 border-t text-sm">
                         <span className="text-gray-500">Subtotal</span>
+                        <span className="text-gray-500 font-semibold w-28 text-right">Shop 20% {fmt(refCutTotal)}</span>
                         <span className="text-orange-600 font-semibold w-20 text-right">Wade {fmt(refWade)}</span>
                         <span className="text-blue-600 font-semibold w-20 text-right">Wayne {fmt(refWayne)}</span>
                       </div>
@@ -268,8 +269,9 @@ export default function ReportsPage() {
                       <th className="pb-2 pr-3">Customer</th>
                       <th className="pb-2 pr-3">Equipment</th>
                       <th className="pb-2 pr-3">Date In</th>
-                      <th className="pb-2 pr-3 text-right">Charged</th>
-                      <th className="pb-2 text-right">Paid</th>
+                      <th className="pb-2 pr-3 text-right">Invoiced</th>
+                      <th className="pb-2 pr-3 text-right">Paid</th>
+                      <th className="pb-2 text-right">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -283,8 +285,17 @@ export default function ReportsPage() {
                         <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
                         <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                         <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                        <td className="py-1.5 pr-3 text-right font-medium">{fmt(row.amount_charged)}</td>
-                        <td className="py-1.5 text-right text-red-500">{fmt(row.amount_paid)}</td>
+                        <td className="py-1.5 pr-3 text-right font-medium">
+                          {Number(row.amount_charged) > 0
+                            ? fmt(row.amount_charged)
+                            : <span className="text-gray-400 text-xs">not invoiced</span>}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right text-red-500">{Number(row.amount_paid) > 0 ? fmt(row.amount_paid) : '-'}</td>
+                        <td className="py-1.5 text-right font-semibold text-orange-600">
+                          {Number(row.amount_charged) > 0
+                            ? fmt(Number(row.amount_charged) - Number(row.amount_paid))
+                            : <span className="text-gray-400 text-xs">-</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
