@@ -38,6 +38,7 @@ export default function NewWorkOrder() {
   const [newCustEmail, setNewCustEmail] = useState('')
   const [newCustSource, setNewCustSource] = useState<'own' | 'referral'>('own')
   const [newCustShop, setNewCustShop] = useState('')
+  const [referralShops, setReferralShops] = useState<{id:string;name:string;is_default:boolean}[]>([])
 
   // New equipment inline form
   const [addingEquip, setAddingEquip] = useState(false)
@@ -48,6 +49,13 @@ export default function NewWorkOrder() {
 
   useEffect(() => {
     fetch('/api/customers').then(r => r.json()).then(setCustomers)
+    fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) {
+        setReferralShops(data)
+        const def = data.find((s: {is_default:boolean;name:string}) => s.is_default)
+        if (def) setNewCustShop(def.name)
+      }
+    })
   }, [])
 
   const loadEquipment = useCallback((custId: string) => {
@@ -206,7 +214,13 @@ export default function NewWorkOrder() {
                 {newCustSource === 'referral' && (
                   <div>
                     <Label className="text-xs">Referring Shop</Label>
-                    <Input value={newCustShop} onChange={e => setNewCustShop(e.target.value)} placeholder="Shop name" />
+                    <select value={newCustShop} onChange={e => setNewCustShop(e.target.value)}
+                      className="w-full border rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                      <option value="">Select shop...</option>
+                      {referralShops.map(s => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
                 <div className="flex gap-2">
