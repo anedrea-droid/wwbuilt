@@ -86,7 +86,7 @@ export default function WorkOrderDetail() {
     await fetch('/api/work-orders/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: wwAcqType })
+      body: JSON.stringify({ status: 'complete' })
     })
     await fetch('/api/shop-equipment', {
       method: 'POST',
