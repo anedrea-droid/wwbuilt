@@ -79,6 +79,8 @@ export default function NewWorkOrder() {
     const c = await res.json()
     setCustomers(prev => [...prev, c].sort((a,b) => a.name.localeCompare(b.name)))
     setSelectedCustomerId(c.id)
+    setCustSearch(c.name + (c.phone ? ' - ' + c.phone : ''))
+    setShowSuggestions(false)
     setAddingCustomer(false)
     setNewCustName(''); setNewCustPhone(''); setNewCustEmail(''); setNewCustSource('own'); setNewCustShop('')
   }
