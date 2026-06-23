@@ -54,28 +54,25 @@ export async function PATCH(
     )
 
     // Auto-status logic - runs after the main update
-    // shop_payment_received = true -> picked-up (job fully settled)
+    // Each check is independent so saving multiple fields at once works correctly
     if (body.shop_payment_received === true || body.shop_payment_received === 'true') {
-      await pool.query(
-        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status = 'at-shop'",
-        [id]
-      )
-    // referral_dropoff_date set -> at-shop (WW returned it, waiting for shop payment)
-    } else if (body.referral_dropoff_date) {
-      await pool.query(
-        "UPDATE work_orders SET status = 'at-shop' WHERE id = $1",
-        [id]
-      )
-    }
-    // date_picked_up set -> picked-up (highest priority for non-referral)
-    else if (body.date_picked_up) {
+      // Shop paid WW - job fully settled regardless of previous status
       await pool.query(
         "UPDATE work_orders SET status = 'picked-up' WHERE id = $1",
         [id]
       )
-    }
-    // date_complete set -> complete (only if not already at-shop or picked-up)
-    else if (body.date_complete) {
+    } else if (body.referral_dropoff_date) {
+      // Returned to shop - waiting for shop payment (don't downgrade if already picked-up)
+      await pool.query(
+        "UPDATE work_orders SET status = 'at-shop' WHERE id = $1 AND status NOT IN ('picked-up')",
+        [id]
+      )
+    } else if (body.date_picked_up) {
+      await pool.query(
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1",
+        [id]
+      )
+    } else if (body.date_complete) {
       await pool.query(
         "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
         [id]
