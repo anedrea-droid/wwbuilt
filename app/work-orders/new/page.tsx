@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils"
 import type { Customer, Equipment } from "@/types"
 
-const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Other']
+const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Other']
 
 export default function NewWorkOrder() {
   const router = useRouter()
