@@ -34,7 +34,7 @@ const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
   'picked-up':     { label: 'Picked Up',        cls: 'bg-slate-100 text-slate-500' },
 }
 
-const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Other']
+const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Other']
 
 export default function CustomerDetail() {
   const params = useParams()
@@ -176,7 +176,7 @@ export default function CustomerDetail() {
                       className={cn("flex-1 py-1.5 rounded text-sm font-medium border",
                         source === s ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-200"
                       )}>
-                      {s === 'own' ? 'ðŸ‘¤ Our Customer' : 'ðŸ”„ Referral'}
+                      {s === 'own' ? 'Ã°Å¸â€˜Â¤ Our Customer' : 'Ã°Å¸â€â€ž Referral'}
                     </button>
                   ))}
                 </div>
@@ -235,7 +235,7 @@ export default function CustomerDetail() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Make *</Label>
-                  <Input value={newMake} onChange={e => setNewMake(e.target.value)} placeholder="Husqvarnaâ€¦" />
+                  <Input value={newMake} onChange={e => setNewMake(e.target.value)} placeholder="HusqvarnaÃ¢â‚¬Â¦" />
                 </div>
                 <div>
                   <Label className="text-xs">Model</Label>
@@ -259,7 +259,7 @@ export default function CustomerDetail() {
               <div key={e.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-50 border">
                 <Wrench className="h-4 w-4 text-orange-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-slate-700">{e.type} â€” {e.make} {e.model}</div>
+                  <div className="text-sm font-medium text-slate-700">{e.type} Ã¢â‚¬â€ {e.make} {e.model}</div>
                   {e.serialNumber && <div className="text-xs text-slate-400">S/N: {e.serialNumber}</div>}
                 </div>
               </div>
@@ -293,7 +293,7 @@ export default function CustomerDetail() {
                       {scfg && <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium", scfg.cls)}>{scfg.label}</span>}
                     </div>
                     <div className="text-xs text-slate-500 truncate mt-0.5">
-                      {wo.equipment ? `${wo.equipment.type} â€” ${wo.equipment.make} ${wo.equipment.model}` : ''} Â· {wo.technician}
+                      {wo.equipment ? `${wo.equipment.type} Ã¢â‚¬â€ ${wo.equipment.make} ${wo.equipment.model}` : ''} Ã‚Â· {wo.technician}
                     </div>
                     {wo.complaint && <p className="text-xs text-slate-400 truncate italic">"{wo.complaint}"</p>}
                   </div>
