@@ -69,6 +69,13 @@ export default function NewWorkOrder() {
     setAddingEquip(false)
   }, [selectedCustomerId, loadEquipment])
 
+  function formatPhone(raw: string): string {
+    const digits = raw.replace(/\D/g, '').slice(0, 10)
+    if (digits.length < 4) return digits
+    if (digits.length < 7) return '(' + digits.slice(0,3) + ') ' + digits.slice(3)
+    return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6)
+  }
+
   async function handleSaveCustomer() {
     if (!newCustName.trim()) return
     const res = await fetch('/api/customers', {
@@ -193,7 +200,7 @@ export default function NewWorkOrder() {
                   </div>
                   <div>
                     <Label className="text-xs">Phone</Label>
-                    <Input value={newCustPhone} onChange={e => setNewCustPhone(e.target.value)} placeholder="(361) 555-0000" type="tel" />
+                    <Input value={newCustPhone} onChange={e => setNewCustPhone(formatPhone(e.target.value))} placeholder="(361) 555-0000" type="tel" />
                   </div>
                 </div>
                 <div>
