@@ -34,7 +34,7 @@ const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
   'picked-up':     { label: 'Picked Up',        cls: 'bg-slate-100 text-slate-500' },
 }
 
-const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Other']
+const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Concrete Saw','Other']
 
 export default function CustomerDetail() {
   const params = useParams()
@@ -55,6 +55,7 @@ export default function CustomerDetail() {
 
   const [addingEquip, setAddingEquip] = useState(false)
   const [newType, setNewType] = useState('Mower')
+  const [newTypeOther, setNewTypeOther] = useState('')
   const [newMake, setNewMake] = useState('')
   const [newModel, setNewModel] = useState('')
   const [newSerial, setNewSerial] = useState('')
@@ -108,7 +109,7 @@ export default function CustomerDetail() {
     await fetch('/api/equipment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: id, type: newType, make: newMake, model: newModel, serialNumber: newSerial })
+      body: JSON.stringify({ customerId: id, type: newType === 'Other' ? (newTypeOther.trim() || 'Other') : newType, make: newMake, model: newModel, serialNumber: newSerial })
     })
     setAddingEquip(false)
     setNewMake(''); setNewModel(''); setNewSerial(''); setNewType('Mower')
@@ -247,10 +248,14 @@ export default function CustomerDetail() {
             <div className="p-3 bg-orange-50 rounded-lg border border-orange-200 space-y-2">
               <div>
                 <Label className="text-xs">Type</Label>
-                <Select value={newType} onValueChange={setNewType}>
+                <Select value={newType} onValueChange={v => { setNewType(v); if (v !== 'Other') setNewTypeOther('') }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
+                {newType === 'Other' && (
+                  <Input value={newTypeOther} onChange={e => setNewTypeOther(e.target.value)}
+                    placeholder="Describe equipment type" className="mt-1" />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
