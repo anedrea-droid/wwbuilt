@@ -50,6 +50,7 @@ export default function CustomerDetail() {
   const [email, setEmail] = useState('')
   const [source, setSource] = useState<'own' | 'referral'>('own')
   const [referralShop, setReferralShop] = useState('')
+  const [referralShops, setReferralShops] = useState<{id:string;name:string;is_default:boolean}[]>([])
   const [notes, setNotes] = useState('')
 
   const [addingEquip, setAddingEquip] = useState(false)
@@ -74,7 +75,12 @@ export default function CustomerDetail() {
     }
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setReferralShops(data)
+    })
+  }, [load])
 
   async function saveCustomer() {
     setSaving(true)
@@ -176,7 +182,7 @@ export default function CustomerDetail() {
                       className={cn("flex-1 py-1.5 rounded text-sm font-medium border",
                         source === s ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-200"
                       )}>
-                      {s === 'own' ? 'Ã°Å¸â€˜Â¤ Our Customer' : 'Ã°Å¸â€â€ž Referral'}
+                      {s === 'own' ? ' Our Customer' : ' Referral'}
                     </button>
                   ))}
                 </div>
@@ -184,7 +190,13 @@ export default function CustomerDetail() {
               {source === 'referral' && (
                 <div>
                   <Label className="text-xs">Referring Shop</Label>
-                  <Input value={referralShop} onChange={e => setReferralShop(e.target.value)} className="mt-1" />
+                  <select value={referralShop} onChange={e => setReferralShop(e.target.value)}
+                    className="w-full border rounded-md px-2 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-orange-400">
+                    <option value="">Select shop...</option>
+                    {referralShops.map(s => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               <div>
@@ -235,7 +247,7 @@ export default function CustomerDetail() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Make *</Label>
-                  <Input value={newMake} onChange={e => setNewMake(e.target.value)} placeholder="HusqvarnaÃ¢â‚¬Â¦" />
+                  <Input value={newMake} onChange={e => setNewMake(e.target.value)} placeholder="Husqvarna" />
                 </div>
                 <div>
                   <Label className="text-xs">Model</Label>
@@ -259,7 +271,7 @@ export default function CustomerDetail() {
               <div key={e.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-50 border">
                 <Wrench className="h-4 w-4 text-orange-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-slate-700">{e.type} Ã¢â‚¬â€ {e.make} {e.model}</div>
+                  <div className="text-sm font-medium text-slate-700">{e.type}  {e.make} {e.model}</div>
                   {e.serialNumber && <div className="text-xs text-slate-400">S/N: {e.serialNumber}</div>}
                 </div>
               </div>
@@ -293,7 +305,7 @@ export default function CustomerDetail() {
                       {scfg && <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium", scfg.cls)}>{scfg.label}</span>}
                     </div>
                     <div className="text-xs text-slate-500 truncate mt-0.5">
-                      {wo.equipment ? `${wo.equipment.type} Ã¢â‚¬â€ ${wo.equipment.make} ${wo.equipment.model}` : ''} Ã‚Â· {wo.technician}
+                      {wo.equipment ? `${wo.equipment.type}  ${wo.equipment.make} ${wo.equipment.model}` : ''}  {wo.technician}
                     </div>
                     {wo.complaint && <p className="text-xs text-slate-400 truncate italic">"{wo.complaint}"</p>}
                   </div>
