@@ -16,6 +16,9 @@ export default function Nav() {
       <Link href="/search" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
         Search
       </Link>
+      <Link href="/shop-equipment" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
+        Shop Equipment
+      </Link>
       <Link href="/reports" className="text-orange-100 hover:bg-orange-600 px-3 py-1 rounded-md text-sm">
         Reports
       </Link>
