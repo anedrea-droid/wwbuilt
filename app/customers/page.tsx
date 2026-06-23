@@ -14,6 +14,14 @@ export default function CustomersPage() {
     fetch('/api/customers').then(r => r.json()).then(data => { setCustomers(data); setLoading(false) })
   }, [])
 
+
+  function formatPhone(raw: string): string {
+    const digits = raw.replace(/\D/g, '').slice(0, 10)
+    if (digits.length < 4) return digits
+    if (digits.length < 7) return '(' + digits.slice(0,3) + ') ' + digits.slice(3)
+    return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6)
+  }
+
   async function addCustomer() {
     if (!form.name.trim()) return alert('Name is required')
     const res = await fetch('/api/customers', {
@@ -27,7 +35,7 @@ export default function CustomersPage() {
     setShowAdd(false)
   }
 
-  if (loading) return <div className="p-8 text-gray-500">Loading…</div>
+  if (loading) return <div className="p-8 text-gray-500">Loadingâ€¦</div>
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
@@ -50,7 +58,7 @@ export default function CustomersPage() {
             </div>
             <div>
               <label className="text-xs text-gray-500">Phone</label>
-              <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+              <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
                 className="w-full border rounded px-2 py-1 text-sm" placeholder="555-1234" />
             </div>
             <div>
