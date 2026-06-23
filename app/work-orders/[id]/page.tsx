@@ -29,6 +29,8 @@ const STATUS_COLORS: Record<string, string> = {
   'complete':      'bg-green-100 text-green-800',
   'at-shop':       'bg-purple-100 text-purple-700',
   'picked-up':     'bg-gray-100 text-gray-800',
+  'abandoned':     'bg-red-100 text-red-800',
+  'donated':       'bg-purple-100 text-purple-800',
 }
 
 export default function WorkOrderDetail() {
@@ -49,6 +51,9 @@ export default function WorkOrderDetail() {
     cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false,
   })
   const [saving, setSaving] = useState(false)
+  const [showWWModal, setShowWWModal] = useState(false)
+  const [wwAcqType, setWwAcqType] = useState('abandoned')
+  const [wwNotes, setWwNotes] = useState('')
   const [editingPart, setEditingPart] = useState<string | null>(null)
   const [partForm, setPartForm] = useState<Partial<Part>>({})
 
@@ -74,6 +79,34 @@ export default function WorkOrderDetail() {
     fetch('/api/customers/' + wo.customerId).then(r => r.json()).then(data => setCustomer(data.customer ?? data))
     fetch('/api/equipment/' + wo.equipmentId).then(r => r.json()).then(setEquipment)
   }, [wo])
+
+  async function markAsWWProperty() {
+    if (!wo) return
+    const equipDesc = [equipment?.year, equipment?.make, equipment?.model, equipment?.type].filter(Boolean).join(' ')
+    await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: wwAcqType })
+    })
+    await fetch('/api/shop-equipment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        work_order_id: id,
+        equipment_description: equipDesc || 'Unknown Equipment',
+        acquisition_type: wwAcqType,
+        acquired_date: new Date().toISOString().slice(0, 10),
+        condition_notes: wwNotes || null,
+        status: 'available'
+      })
+    })
+    setShowWWModal(false)
+    setWwNotes('')
+    const woRes = await fetch('/api/work-orders/' + id)
+    const woData = normalizeDates(await woRes.json())
+    setWo(woData)
+    setForm(woData)
+  }
 
   async function saveWorkOrder() {
     setSaving(true)
@@ -286,9 +319,17 @@ export default function WorkOrderDetail() {
           <Link href="/" className="text-sm text-orange-500 hover:underline">Back to Work Orders</Link>
           <h1 className="text-2xl font-bold mt-1">Work Order #{wo.orderNumber}</h1>
         </div>
-        <span className={'px-3 py-1 rounded-full text-xs font-semibold ' + (STATUS_COLORS[wo.status] || 'bg-gray-100 text-gray-700')}>
-          {wo.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={'px-3 py-1 rounded-full text-xs font-semibold ' + (STATUS_COLORS[wo.status] || 'bg-gray-100 text-gray-700')}>
+            {wo.status}
+          </span>
+          {wo.status !== 'abandoned' && wo.status !== 'donated' && wo.status !== 'picked-up' && (
+            <button onClick={() => setShowWWModal(true)}
+              className="text-xs bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-200">
+              Mark as WW Property
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -341,7 +382,7 @@ export default function WorkOrderDetail() {
             {editing ? (
               <select value={form.status || ''} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 className="w-full border rounded px-2 py-1 text-sm">
-                {['pending','in-progress','waiting-parts','complete','at-shop','picked-up'].map(s => (
+                {['pending','in-progress','waiting-parts','complete','at-shop','picked-up','abandoned','donated'].map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
@@ -849,6 +890,34 @@ export default function WorkOrderDetail() {
           Delete this work order
         </button>
       </div>
+
+      {showWWModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Mark as WW Property</h2>
+            <p className="text-sm text-gray-500 mb-4">This will close the work order and add the equipment to the Shop Equipment list.</p>
+            <div className="mb-3">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Reason</label>
+              <select value={wwAcqType} onChange={e => setWwAcqType(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm">
+                <option value="abandoned">Abandoned - customer never picked up / never paid</option>
+                <option value="donated">Donated - customer gave it to WW</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Condition Notes (optional)</label>
+              <input value={wwNotes} onChange={e => setWwNotes(e.target.value)} placeholder="Brief condition description" className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={markAsWWProperty} className="flex-1 bg-red-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-red-700">
+                Confirm
+              </button>
+              <button onClick={() => setShowWWModal(false)} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
