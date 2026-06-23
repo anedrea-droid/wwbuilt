@@ -23,6 +23,8 @@ export default function NewWorkOrder() {
 
   // Form state
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [custSearch, setCustSearch] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('')
   const [technician, setTechnician] = useState<'Wade' | 'Wayne'>('Wade')
   const [complaint, setComplaint] = useState('')
@@ -126,18 +128,47 @@ export default function NewWorkOrder() {
           <CardContent className="px-4 pb-4 space-y-3">
             {!addingCustomer ? (
               <>
-                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a customer..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}{c.phone ? ' - ' + c.phone : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Type customer name..."
+                    value={custSearch}
+                    onChange={e => {
+                      setCustSearch(e.target.value)
+                      setShowSuggestions(true)
+                      if (!e.target.value) setSelectedCustomerId('')
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                  {selectedCustomerId && !showSuggestions && (
+                    <span className="absolute right-3 top-2.5 text-xs text-green-600 font-medium">Selected</span>
+                  )}
+                  {showSuggestions && custSearch.length > 0 && (
+                    <div className="absolute z-10 w-full bg-white border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                      {customers
+                        .filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase()))
+                        .slice(0, 5)
+                        .map(c => (
+                          <button key={c.id} type="button"
+                            onMouseDown={() => {
+                              setSelectedCustomerId(c.id)
+                              setCustSearch(c.name + (c.phone ? ' - ' + c.phone : ''))
+                              setShowSuggestions(false)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b last:border-0">
+                            <span className="font-medium">{c.name}</span>
+                            {c.phone && <span className="text-gray-400 ml-2 text-xs">{c.phone}</span>}
+                            {c.source === 'referral' && <span className="text-blue-500 ml-2 text-xs">Referral</span>}
+                          </button>
+                        ))}
+                      {customers.filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-400">No customers found</div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <Button variant="outline" size="sm" onClick={() => setAddingCustomer(true)} className="w-full">
                   <Plus className="h-4 w-4 mr-1" /> Add New Customer
                 </Button>
