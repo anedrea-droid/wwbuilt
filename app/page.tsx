@@ -52,7 +52,7 @@ export default function WorkOrdersDashboard() {
       .catch(() => setLoading(false))
   }, [])
 
-  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && (o.status as string) !== 'donated' && (o.status as string) !== 'abandoned'
+  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned'
 
   const filtered = orders.filter(o => {
     if (tab === 'active')  return isActive(o)
@@ -61,7 +61,7 @@ export default function WorkOrdersDashboard() {
     if (tab === 'parts')   return o.status === 'waiting-parts'
     if (tab === 'ready')   return o.status === 'complete'
     if (tab === 'atshop')  return o.status === 'at-shop'
-    if (tab === 'done')    return o.status === 'picked-up' || (o.status as string) === 'donated' || (o.status as string) === 'abandoned'
+    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned'
     return true
   })
 
