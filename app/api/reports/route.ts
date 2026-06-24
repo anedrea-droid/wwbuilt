@@ -138,6 +138,7 @@ export async function GET(req: Request) {
         'SELECT wo.id, wo.order_number, wo.status, wo.date_complete, wo.amount_charged, ' +
         'wo.referral_pickup_date, wo.referral_dropoff_date, ' +
         'wo.shop_payment_received, wo.shop_payment_amount, wo.shop_payment_date, ' +
+        'wo.labor_hours, wo.labor_rate, ' +
         'c.name as customer_name, c.referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
