@@ -59,8 +59,9 @@ export default function WorkOrderDetail() {
 
   function normalizeDates(data: WorkOrder): WorkOrder {
     const d = (v: unknown) => v ? String(v).slice(0, 10) : ''
-    return { ...data, dateIn: d(data.dateIn), dateComplete: d(data.dateComplete),
-      datePickedUp: d(data.datePickedUp), referralPickupDate: d(data.referralPickupDate),
+    const dateIn = d(data.dateIn)
+    return { ...data, dateIn: dateIn, dateComplete: d(data.dateComplete),
+      datePickedUp: d(data.datePickedUp), referralPickupDate: d(data.referralPickupDate) || dateIn,
       referralDropoffDate: d(data.referralDropoffDate), shopPaymentDate: d(data.shopPaymentDate),
       commissionPaidDate: d(data.commissionPaidDate) }
   }
