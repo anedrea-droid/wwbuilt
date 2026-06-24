@@ -22,7 +22,7 @@ interface SearchResult {
   }[]
 }
 
-const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   'pending':       { label: 'Pending',           cls: 'bg-gray-100 text-gray-600' },
   'in-progress':   { label: 'In Progress',        cls: 'bg-blue-100 text-blue-700' },
   'waiting-parts': { label: 'Waiting Parts',      cls: 'bg-amber-100 text-amber-700' },
