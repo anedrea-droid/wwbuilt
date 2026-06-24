@@ -25,7 +25,7 @@ interface CustomerDetail {
   workOrders: WOSummary[]
 }
 
-const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
+const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   'pending':       { label: 'Pending',         cls: 'bg-gray-100 text-gray-600' },
   'in-progress':   { label: 'In Progress',      cls: 'bg-blue-100 text-blue-700' },
   'waiting-parts': { label: 'Waiting Parts',    cls: 'bg-amber-100 text-amber-700' },
@@ -134,7 +134,7 @@ export default function CustomerDetail() {
   )
 
   const { customer: c, equipment, workOrders } = data
-  const activeJobs = workOrders.filter(wo => wo.status !== 'picked-up' && wo.status !== 'donated' && wo.status !== 'abandoned')
+  const activeJobs = workOrders.filter(wo => wo.status !== 'picked-up' && (wo.status as string) !== 'donated' && (wo.status as string) !== 'abandoned')
 
   return (
     <div className="max-w-2xl mx-auto px-3 pt-4 space-y-4">
