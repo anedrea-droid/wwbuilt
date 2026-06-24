@@ -196,6 +196,28 @@ export async function GET(req: Request) {
       return NextResponse.json(rows)
     }
 
+    if (type === 'parts-report') {
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, ' +
+        'c.name as customer_name, c.source as customer_source, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
+        'COUNT(p.id) as parts_count ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'INNER JOIN parts p ON p.work_order_id = wo.id ' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND wo.date_in >= $1 AND wo.date_in <= $2 ' +
+        'GROUP BY wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, ' +
+        'c.name, c.source, e.type, e.make, e.model ' +
+        'ORDER BY wo.date_in DESC',
+        [from, to]
+      )
+      return NextResponse.json(rows)
+    }
+
     return NextResponse.json({ error: 'Unknown report type' }, { status: 400 })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
