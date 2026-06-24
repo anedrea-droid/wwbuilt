@@ -32,6 +32,8 @@ const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string }> = {
   'complete':      { label: 'Ready for Pickup', cls: 'bg-green-100 text-green-700' },
   'at-shop':       { label: 'At Referral Shop', cls: 'bg-purple-100 text-purple-700' },
   'picked-up':     { label: 'Picked Up',        cls: 'bg-slate-100 text-slate-500' },
+  'donated':       { label: 'Donated to WW',     cls: 'bg-purple-100 text-purple-700' },
+  'abandoned':     { label: 'WW Property',        cls: 'bg-red-100 text-red-700' },
 }
 
 const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Concrete Saw','Other']
@@ -132,7 +134,7 @@ export default function CustomerDetail() {
   )
 
   const { customer: c, equipment, workOrders } = data
-  const activeJobs = workOrders.filter(wo => wo.status !== 'picked-up')
+  const activeJobs = workOrders.filter(wo => wo.status !== 'picked-up' && wo.status !== 'donated' && wo.status !== 'abandoned')
 
   return (
     <div className="max-w-2xl mx-auto px-3 pt-4 space-y-4">
