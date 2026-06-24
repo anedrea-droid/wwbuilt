@@ -54,15 +54,12 @@ export async function PATCH(
     )
 
     // Auto-status logic - runs after the main update
-    // Each check is independent so saving multiple fields at once works correctly
     if (body.shop_payment_received === true || body.shop_payment_received === 'true') {
-      // Shop paid WW - job fully settled regardless of previous status
       await pool.query(
         "UPDATE work_orders SET status = 'picked-up' WHERE id = $1",
         [id]
       )
     } else if (body.referral_dropoff_date) {
-      // Returned to shop - waiting for shop payment (don't downgrade if already picked-up)
       await pool.query(
         "UPDATE work_orders SET status = 'at-shop' WHERE id = $1 AND status NOT IN ('picked-up')",
         [id]
@@ -75,6 +72,49 @@ export async function PATCH(
     } else if (body.date_complete) {
       await pool.query(
         "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
+        [id]
+      )
+    }
+
+    // Auto-fill standard fields from referral equivalents so reports and
+    // payout calculations work correctly for referral work orders.
+    //
+    // Rule 1: referral_dropoff_date => date_complete (returned to shop = work complete)
+    //   Only fills if date_complete is currently null/empty.
+    if (body.referral_dropoff_date) {
+      await pool.query(
+        'UPDATE work_orders SET date_complete = $1 WHERE id = $2 AND (date_complete IS NULL OR date_complete = \'\')',
+        [body.referral_dropoff_date, id]
+      )
+    }
+
+    // Rule 2: shop_payment_amount => amount_charged (shop payment = invoice amount)
+    //   Only fills if amount_charged is currently null or 0.
+    if (body.shop_payment_amount !== undefined && body.shop_payment_amount !== null && body.shop_payment_amount !== '' && Number(body.shop_payment_amount) > 0) {
+      await pool.query(
+        'UPDATE work_orders SET amount_charged = $1 WHERE id = $2 AND (amount_charged IS NULL OR amount_charged = 0)',
+        [body.shop_payment_amount, id]
+      )
+    }
+
+    // Rule 3: shop_payment_received + shop_payment_date => date_picked_up + amount_paid + payment_method
+    //   Marks when the customer paid the shop and WW was settled.
+    if (body.shop_payment_received === true || body.shop_payment_received === 'true') {
+      const payDate = body.shop_payment_date || null
+      // date_picked_up: use shop_payment_date if available, otherwise today
+      const pickupDate = payDate || new Date().toISOString().slice(0, 10)
+      await pool.query(
+        'UPDATE work_orders SET date_picked_up = $1 WHERE id = $2 AND (date_picked_up IS NULL OR date_picked_up = \'\')',
+        [pickupDate, id]
+      )
+      // amount_paid: fill from shop_payment_amount
+      await pool.query(
+        'UPDATE work_orders SET amount_paid = shop_payment_amount WHERE id = $1 AND (amount_paid IS NULL OR amount_paid = 0) AND shop_payment_amount IS NOT NULL',
+        [id]
+      )
+      // payment_method: mark as referral shop payment
+      await pool.query(
+        "UPDATE work_orders SET payment_method = 'Referral Shop' WHERE id = $1 AND (payment_method IS NULL OR payment_method = '')",
         [id]
       )
     }
