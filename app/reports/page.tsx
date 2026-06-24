@@ -46,6 +46,7 @@ export default function ReportsPage() {
   const [tripLoading, setTripLoading] = useState(false)
   const [completed, setCompleted] = useState<Record<string, unknown>[]>([])
   const [pendingParts, setPendingParts] = useState<Record<string, unknown>[]>([])
+  const [partsReport, setPartsReport] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(false)
 
   function printTrip() {
@@ -113,12 +114,14 @@ export default function ReportsPage() {
       setCompleted(Array.isArray(c) ? c : [])
     }
     if (tab === 'parts') {
-      const [pp, r] = await Promise.all([
+      const [pp, r, pr] = await Promise.all([
         fetch(base + 'type=parts-pending').then(x => x.json()),
         fetch(base + 'type=revenue').then(x => x.json()),
+        fetch(base + 'type=parts-report&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
       ])
       setPendingParts(Array.isArray(pp) ? pp : [])
       setRevenue(Array.isArray(r) ? r : [])
+      setPartsReport(Array.isArray(pr) ? pr : [])
     }
     setLoading(false)
   }, [tab, fromDate, toDate])
@@ -132,7 +135,7 @@ export default function ReportsPage() {
     { id: 'parts',      label: 'Parts' },
   ]
 
-  const needsDates = tab === 'financial' || tab === 'workorders'
+  const needsDates = tab === 'financial' || tab === 'workorders' || tab === 'parts'
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
@@ -745,6 +748,65 @@ export default function ReportsPage() {
                 </table>
               </div>
             )}
+          </Section>
+
+          {/* Parts Profit Report */}
+          <Section title={'Parts Report - ' + fromDate + ' to ' + toDate}>
+            {partsReport.length === 0 ? <Empty /> : (() => {
+              const totalCost = partsReport.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
+              const totalCharged = partsReport.reduce((s, r) => s + (Number(r.parts_charged) || 0), 0)
+              const totalProfit = totalCharged - totalCost
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                        <th className="pb-2 pr-3">WO#</th>
+                        <th className="pb-2 pr-3">Date In</th>
+                        <th className="pb-2 pr-3">Customer</th>
+                        <th className="pb-2 pr-3">Equipment</th>
+                        <th className="pb-2 pr-3 text-right">Parts</th>
+                        <th className="pb-2 pr-3 text-right">WW Paid</th>
+                        <th className="pb-2 pr-3 text-right">Charged to Customer</th>
+                        <th className="pb-2 text-right text-green-700">Parts Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partsReport.map(row => {
+                        const cost = Number(row.parts_cost) || 0
+                        const charged = Number(row.parts_charged) || 0
+                        const profit = charged - cost
+                        return (
+                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                            <td className="py-1.5 pr-3">
+                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                                {String(row.order_number)}
+                              </Link>
+                            </td>
+                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                            <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                            <td className="py-1.5 pr-3 text-right text-gray-500">{String(row.parts_count)}</td>
+                            <td className="py-1.5 pr-3 text-right text-red-500">{fmt(cost)}</td>
+                            <td className="py-1.5 pr-3 text-right">{fmt(charged)}</td>
+                            <td className="py-1.5 text-right font-medium text-green-700">{fmt(profit)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold">
+                        <td colSpan={4} className="pt-2 text-gray-600">{partsReport.length} work order{partsReport.length !== 1 ? 's' : ''} with parts</td>
+                        <td className="pt-2 text-right text-gray-500">{partsReport.reduce((s, r) => s + (Number(r.parts_count) || 0), 0)}</td>
+                        <td className="pt-2 text-right text-red-600">{fmt(totalCost)}</td>
+                        <td className="pt-2 text-right">{fmt(totalCharged)}</td>
+                        <td className="pt-2 text-right text-green-700">{fmt(totalProfit)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
+            })()}
           </Section>
 
           {/* Revenue vs Parts Cost */}
