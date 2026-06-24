@@ -21,6 +21,7 @@ export async function GET(req: Request) {
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE wo.date_complete >= $1 AND wo.date_complete <= $2 ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'GROUP BY wo.id, c.name, c.source, c.referral_shop ' +
         'ORDER BY wo.date_complete DESC',
         [from, to]
@@ -71,6 +72,7 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE COALESCE(wo.date_complete, wo.referral_dropoff_date) IS NOT NULL ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'GROUP BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)) ' +
         'ORDER BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)) DESC ' +
         'LIMIT 24'
@@ -95,6 +97,7 @@ export async function GET(req: Request) {
         'WHERE c.source = \'referral\' ' +
         'AND wo.referral_dropoff_date IS NOT NULL ' +
         'AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
         'ORDER BY wo.referral_dropoff_date ASC'
       )
@@ -149,6 +152,7 @@ export async function GET(req: Request) {
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE c.source = \'referral\' ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
         'ORDER BY wo.created_at DESC'
       )
@@ -186,6 +190,7 @@ export async function GET(req: Request) {
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'WHERE p.status = \'ordered\' ' +
+        'AND (wo.status IS NULL OR wo.status NOT IN (\'donated\', \'abandoned\')) ' +
         'ORDER BY p.date_ordered ASC NULLS LAST'
       )
       return NextResponse.json(rows)
