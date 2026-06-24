@@ -64,7 +64,7 @@ export default function CustomerDetail() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/customers/${id}`)
+      const res = await fetch('/api/customers/' + id)
       const d = await res.json()
       setData(d)
       setName(d.customer.name)
@@ -95,7 +95,7 @@ export default function CustomerDetail() {
 
   async function saveCustomer() {
     setSaving(true)
-    await fetch(`/api/customers/${id}`, {
+    await fetch('/api/customers/' + id, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, phone, email, source, referralShop, notes })
@@ -147,7 +147,7 @@ export default function CustomerDetail() {
           <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium",
             c.source === 'own' ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"
           )}>
-            {c.source === 'own' ? 'Our Customer' : `Referral${c.referralShop ? ` via ${c.referralShop}` : ''}`}
+            {c.source === 'own' ? 'Our Customer' : (c.referralShop ? 'Referral via ' + c.referralShop : 'Referral')}
           </span>
         </div>
       </div>
@@ -218,13 +218,13 @@ export default function CustomerDetail() {
           ) : (
             <div className="space-y-2">
               {c.phone ? (
-                <a href={`tel:${c.phone}`} className="flex items-center gap-2 text-sm text-slate-700 hover:text-orange-600">
+                <a href={'tel:' + c.phone} className="flex items-center gap-2 text-sm text-slate-700 hover:text-orange-600">
                   <Phone className="h-4 w-4 text-slate-400" />
                   {c.phone}
                 </a>
               ) : <p className="text-sm text-slate-400 italic">No phone</p>}
               {c.email && (
-                <a href={`mailto:${c.email}`} className="flex items-center gap-2 text-sm text-slate-700 hover:text-orange-600">
+                <a href={'mailto:' + c.email} className="flex items-center gap-2 text-sm text-slate-700 hover:text-orange-600">
                   <Mail className="h-4 w-4 text-slate-400" />
                   {c.email}
                 </a>
@@ -313,14 +313,14 @@ export default function CustomerDetail() {
             workOrders.map(wo => {
               const scfg = STATUS_CFG[wo.status]
               return (
-                <Link key={wo.id} href={`/work-orders/${wo.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 border hover:bg-slate-100 transition-colors">
+                <Link key={wo.id} href={'/work-orders/' + wo.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 border hover:bg-slate-100 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-semibold text-slate-700">{wo.orderNumber}</span>
                       {scfg && <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium", scfg.cls)}>{scfg.label}</span>}
                     </div>
                     <div className="text-xs text-slate-500 truncate mt-0.5">
-                      {wo.equipment ? `${wo.equipment.type}  ${wo.equipment.make} ${wo.equipment.model}` : ''}  {wo.technician}
+                      {wo.equipment ? wo.equipment.type + '  ' + wo.equipment.make + ' ' + wo.equipment.model : ''}  {wo.technician}
                     </div>
                     {wo.complaint && <p className="text-xs text-slate-400 truncate italic">"{wo.complaint}"</p>}
                   </div>
