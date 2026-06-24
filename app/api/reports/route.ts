@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     if (type === 'revenue') {
       const { rows } = await pool.query(
         'SELECT ' +
-        'TO_CHAR(DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)), \'YYYY-MM\') as month, ' +
+        'TO_CHAR(DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in)), \'YYYY-MM\') as month, ' +
         'COUNT(DISTINCT wo.id) as job_count, ' +
         'COALESCE(SUM(' +
         '  CASE ' +
@@ -71,10 +71,10 @@ export async function GET(req: Request) {
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
         'FROM work_orders wo ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE COALESCE(wo.date_complete, wo.referral_dropoff_date) IS NOT NULL ' +
+        'WHERE COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in) IS NOT NULL ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
-        'GROUP BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)) ' +
-        'ORDER BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)) DESC ' +
+        'GROUP BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in)) ' +
+        'ORDER BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in)) DESC ' +
         'LIMIT 24'
       )
       return NextResponse.json(rows)
