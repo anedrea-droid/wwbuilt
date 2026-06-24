@@ -576,16 +576,22 @@ export default function ReportsPage() {
                       <th className="pb-2 pr-3">Customer</th>
                       <th className="pb-2 pr-3">Equipment</th>
                       <th className="pb-2 pr-3">Returned to Shop</th>
+                      <th className="pb-2 pr-3 text-right">Invoice Amount</th>
                       <th className="pb-2 pr-3 text-right">Invoice Paid Date</th>
-                      <th className="pb-2 pr-3 text-right">Shop Paid Date</th>
-                      <th className="pb-2 text-right text-orange-600">Paid to Shop</th>
+                      <th className="pb-2 pr-3 text-right text-orange-600">Paid to Shop</th>
+                      <th className="pb-2 text-right">Shop Paid Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {refHistory.map(row => {
-                      const invoice = Number(row.amount_charged) || 0
+                      const shopAmt = Number(row.shop_payment_amount) || 0
+                      const amtCharged = Number(row.amount_charged) || 0
                       const partsCharged = Number(row.parts_charged) || 0
-                      const afterParts = invoice - partsCharged
+                      const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
+                      const invoice = shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : 0
+                      const isEst = invoice === 0
+                      const estTotal = laborEst + partsCharged
+                      const afterParts = invoice > 0 ? invoice - partsCharged : estTotal - partsCharged
                       const paidToShop = afterParts > 0 ? afterParts * 0.20 : 0
                       return (
                         <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
@@ -597,20 +603,28 @@ export default function ReportsPage() {
                           <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
+                          <td className="py-1.5 pr-3 text-right">
+                            {isEst
+                              ? <span className="text-gray-400 text-xs italic">{estTotal > 0 ? 'est. ' + fmt(estTotal) : '-'}</span>
+                              : <span className="font-medium">{fmt(invoice)}</span>}
+                          </td>
                           <td className="py-1.5 pr-3 text-right text-gray-500 text-xs">{row.shop_payment_date ? String(row.shop_payment_date).slice(0,10) : '-'}</td>
-                          <td className="py-1.5 pr-3 text-right text-gray-500 text-xs">{row.commission_paid_date ? String(row.commission_paid_date).slice(0,10) : '-'}</td>
-                          <td className="py-1.5 text-right text-orange-600 font-medium">{paidToShop > 0 ? fmt(paidToShop) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{paidToShop > 0 ? fmt(paidToShop) : '-'}</td>
+                          <td className="py-1.5 text-right text-gray-500 text-xs">{row.commission_paid_date ? String(row.commission_paid_date).slice(0,10) : '-'}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 font-semibold">
-                      <td colSpan={6} className="pt-2 text-gray-600">Total Paid to Shop</td>
+                      <td colSpan={7} className="pt-2 text-gray-600">Total Paid to Shop</td>
                       <td className="pt-2 text-right text-orange-600">
                         {fmt(refHistory.reduce((s, row) => {
-                          const invoice = Number(row.amount_charged) || 0
+                          const shopAmt = Number(row.shop_payment_amount) || 0
+                          const amtCharged = Number(row.amount_charged) || 0
                           const partsCharged = Number(row.parts_charged) || 0
+                          const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
+                          const invoice = shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : laborEst + partsCharged
                           const afterParts = invoice - partsCharged
                           return s + (afterParts > 0 ? afterParts * 0.20 : 0)
                         }, 0))}
