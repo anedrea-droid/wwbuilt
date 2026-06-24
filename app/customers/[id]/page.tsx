@@ -56,6 +56,9 @@ export default function CustomerDetail() {
   const [notes, setNotes] = useState('')
 
   const [addingEquip, setAddingEquip] = useState(false)
+  const [editEquipId, setEditEquipId] = useState<string | null>(null)
+  const [editEquip, setEditEquip] = useState<{ type: string; make: string; model: string; serial: string }>({ type: 'Mower', make: '', model: '', serial: '' })
+  const [editEquipTypeOther, setEditEquipTypeOther] = useState('')
   const [newType, setNewType] = useState('Mower')
   const [newTypeOther, setNewTypeOther] = useState('')
   const [newMake, setNewMake] = useState('')
@@ -105,7 +108,29 @@ export default function CustomerDetail() {
     await load()
   }
 
-  async function addEquipment() {
+  async function deleteEquipment(equipId: string) {
+    if (!confirm('Remove this equipment from the customer? This cannot be undone.')) return
+    await fetch('/api/equipment/' + equipId, { method: 'DELETE' })
+    setData(prev => prev ? { ...prev, equipment: prev.equipment.filter(e => e.id !== equipId) } : prev)
+  }
+
+  async function saveEditEquipment(equipId: string) {
+    setSaving(true)
+    const finalType = editEquip.type === 'Other' ? (editEquipTypeOther.trim() || 'Other') : editEquip.type
+    await fetch('/api/equipment/' + equipId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: finalType, make: editEquip.make, model: editEquip.model, serial_number: editEquip.serial })
+    })
+    setData(prev => {
+      if (!prev) return prev
+      return { ...prev, equipment: prev.equipment.map(e => e.id === equipId ? { ...e, type: finalType, make: editEquip.make, model: editEquip.model, serialNumber: editEquip.serial } : e) }
+    })
+    setEditEquipId(null)
+    setSaving(false)
+  }
+
+    async function addEquipment() {
     if (!newMake.trim()) return
     setSaving(true)
     await fetch('/api/equipment', {
@@ -283,12 +308,51 @@ export default function CustomerDetail() {
             <p className="text-sm text-slate-400 italic">No equipment on file.</p>
           ) : (
             equipment.map(e => (
-              <div key={e.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-50 border">
-                <Wrench className="h-4 w-4 text-orange-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-slate-700">{e.type}  {e.make} {e.model}</div>
-                  {e.serialNumber && <div className="text-xs text-slate-400">S/N: {e.serialNumber}</div>}
-                </div>
+              <div key={e.id} className="rounded-lg bg-slate-50 border">
+                {editEquipId === e.id ? (
+                  <div className="p-3 space-y-2">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">Type</label>
+                      <Select value={editEquip.type} onValueChange={v => { setEditEquip(f => ({ ...f, type: v })); if (v !== 'Other') setEditEquipTypeOther('') }}>
+                        <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>{EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                      </Select>
+                      {editEquip.type === 'Other' && (
+                        <Input value={editEquipTypeOther} onChange={ev => setEditEquipTypeOther(ev.target.value)} placeholder="Describe equipment type" className="mt-1" />
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">Make</label>
+                        <Input value={editEquip.make} onChange={ev => setEditEquip(f => ({ ...f, make: ev.target.value }))} className="mt-1" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-500">Model</label>
+                        <Input value={editEquip.model} onChange={ev => setEditEquip(f => ({ ...f, model: ev.target.value }))} className="mt-1" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500">Serial Number</label>
+                      <Input value={editEquip.serial} onChange={ev => setEditEquip(f => ({ ...f, serial: ev.target.value }))} placeholder="Optional" className="mt-1" />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" onClick={() => saveEditEquipment(e.id)} disabled={!editEquip.make.trim() || saving} className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditEquipId(null)} className="flex-1">Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-2.5">
+                    <Wrench className="h-4 w-4 text-orange-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-700">{e.type}  {e.make} {e.model}</div>
+                      {e.serialNumber && <div className="text-xs text-slate-400">S/N: {e.serialNumber}</div>}
+                    </div>
+                    <button onClick={() => { setEditEquipId(e.id); setEditEquip({ type: e.type || 'Mower', make: e.make || '', model: e.model || '', serial: e.serialNumber || '' }); setEditEquipTypeOther('') }}
+                      className="text-xs text-blue-600 hover:underline px-1">Edit</button>
+                    <button onClick={() => deleteEquipment(e.id)}
+                      className="text-xs text-red-500 hover:underline px-1">Remove</button>
+                  </div>
+                )}
               </div>
             ))
           )}
