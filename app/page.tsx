@@ -21,7 +21,7 @@ interface WorkOrderCard {
   parts?: { id: string; status: string }[]
 }
 
-const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string; dot: string }> = {
+const STATUS_CFG: Record<string, { label: string; cls: string; dot: string }> = {
   'pending':       { label: 'Pending',            cls: 'bg-gray-100 text-gray-700',    dot: 'bg-gray-400' },
   'in-progress':   { label: 'In Progress',         cls: 'bg-blue-100 text-blue-700',    dot: 'bg-blue-500' },
   'waiting-parts': { label: 'Waiting Parts',       cls: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
@@ -52,7 +52,7 @@ export default function WorkOrdersDashboard() {
       .catch(() => setLoading(false))
   }, [])
 
-  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned'
+  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && (o.status as string) !== 'donated' && (o.status as string) !== 'abandoned'
 
   const filtered = orders.filter(o => {
     if (tab === 'active')  return isActive(o)
@@ -61,7 +61,7 @@ export default function WorkOrdersDashboard() {
     if (tab === 'parts')   return o.status === 'waiting-parts'
     if (tab === 'ready')   return o.status === 'complete'
     if (tab === 'atshop')  return o.status === 'at-shop'
-    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned'
+    if (tab === 'done')    return o.status === 'picked-up' || (o.status as string) === 'donated' || (o.status as string) === 'abandoned'
     return true
   })
 
