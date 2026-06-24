@@ -41,11 +41,55 @@ export default function ReportsPage() {
   const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
   const [atShop, setAtShop] = useState<Record<string, unknown>[]>([])
   const [refHistory, setRefHistory] = useState<Record<string, unknown>[]>([])
+  const [tripDate, setTripDate] = useState(new Date().toISOString().slice(0, 10))
+  const [tripData, setTripData] = useState<{ thisTrip: Record<string, unknown>[]; outstanding: Record<string, unknown>[]; tripDate: string } | null>(null)
+  const [tripLoading, setTripLoading] = useState(false)
   const [completed, setCompleted] = useState<Record<string, unknown>[]>([])
   const [pendingParts, setPendingParts] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(false)
 
-  const load = useCallback(async () => {
+  function printTrip() {
+    if (!tripData) return
+    const fmtD = (d: unknown) => d ? String(d).slice(0, 10) : '-'
+    const fmtM = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
+    const rows1 = tripData.thisTrip.map(r => {
+      const inv = Number(r.amount_charged) || 0
+      const pc = Number(r.parts_charged) || 0
+      const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
+    }).join('')
+    const rows2 = tripData.outstanding.map(r => {
+      const inv = Number(r.amount_charged) || 0
+      const pc = Number(r.parts_charged) || 0
+      const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
+    }).join('')
+    const tot1 = tripData.thisTrip.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s + (ap>0?ap*0.20:0) }, 0)
+    const tot2 = tripData.outstanding.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s + (ap>0?ap*0.20:0) }, 0)
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:8px}th{text-align:left;border-bottom:2px solid #333;padding:4px 8px 4px 0;font-size:11px;text-transform:uppercase}td{padding:4px 8px 4px 0;border-bottom:1px solid #eee;vertical-align:top}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}@media print{button{display:none}}</style></head><body>')
+    w.document.write('<h1>WW Small Engine - Shop Trip Sheet</h1>')
+    w.document.write('<p>Referral Shop: Seguin Small Engine &nbsp;&nbsp; Date: ' + tripData.tripDate + '</p>')
+    w.document.write('<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">Print</button>')
+    w.document.write('<h2>Dropping Off Today (' + tripData.thisTrip.length + ' items)</h2>')
+    w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Work Done / Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rows1 + '</tbody><tfoot><tr><td colspan="5" class="right">Total WW Owes (Today)</td><td class="right orange">$' + tot1.toFixed(2) + '</td></tr></tfoot></table>')
+    w.document.write('<h2>Previously Returned - Awaiting Shop Payment (' + tripData.outstanding.length + ' items)</h2>')
+    w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Returned</th><th>Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rows2 + '</tbody><tfoot><tr><td colspan="6" class="right">Total Outstanding</td><td class="right orange">$' + tot2.toFixed(2) + '</td></tr></tfoot></table>')
+    w.document.write('<p style="margin-top:20px;font-size:11px;color:#666">Combined WW Owes: $' + (tot1 + tot2).toFixed(2) + '</p>')
+    w.document.write('</body></html>')
+    w.document.close()
+  }
+
+    async function loadTrip(date: string) {
+    setTripLoading(true)
+    const res = await fetch('/api/reports?type=referral-trip&date=' + date)
+    const data = await res.json()
+    setTripData(data)
+    setTripLoading(false)
+  }
+
+    const load = useCallback(async () => {
     setLoading(true)
     const base = '/api/reports?'
     if (tab === 'financial') {
@@ -351,6 +395,137 @@ export default function ReportsPage() {
 
       {!loading && tab === 'referral' && (
         <div className="space-y-5">
+
+          {/* Trip Report */}
+          <Section title="Shop Trip Report">
+            <div className="flex items-end gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Trip Date</label>
+                <input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)}
+                  className="border rounded-md px-3 py-1.5 text-sm" />
+              </div>
+              <button onClick={() => loadTrip(tripDate)}
+                className="bg-orange-500 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600">
+                {tripLoading ? 'Loading...' : 'Generate Report'}
+              </button>
+              {tripData && (
+                <button onClick={printTrip}
+                  className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+                  Print Trip Sheet
+                </button>
+              )}
+            </div>
+
+            {tripData && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-semibold text-gray-700 mb-2">
+                    Dropping Off Today
+                    <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-normal">{tripData.thisTrip.length} items</span>
+                  </h3>
+                  {tripData.thisTrip.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic">No drop-offs recorded for this date.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                            <th className="pb-2 pr-3">WO#</th>
+                            <th className="pb-2 pr-3">Customer</th>
+                            <th className="pb-2 pr-3">Equipment</th>
+                            <th className="pb-2 pr-3">Work Done / Notes</th>
+                            <th className="pb-2 pr-3 text-right">Invoice</th>
+                            <th className="pb-2 text-right text-orange-600">WW Owes Shop</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tripData.thisTrip.map(row => {
+                            const inv = Number(row.amount_charged) || 0
+                            const pc = Number(row.parts_charged) || 0
+                            const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+                            return (
+                              <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                <td className="py-1.5 pr-3">
+                                  <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
+                                </td>
+                                <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs max-w-xs truncate">{String(row.work_done || row.complaint || '-')}</td>
+                                <td className="py-1.5 pr-3 text-right">{inv > 0 ? fmt(inv) : '-'}</td>
+                                <td className="py-1.5 text-right text-orange-600 font-medium">{owes > 0 ? fmt(owes) : '-'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 font-semibold">
+                            <td colSpan={5} className="pt-2 text-gray-600 text-right">Total WW Owes (Today)</td>
+                            <td className="pt-2 text-right text-orange-600">
+                              {fmt(tripData.thisTrip.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-gray-700 mb-2">
+                    Previously Returned - Awaiting Shop Payment
+                    <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">{tripData.outstanding.length} items</span>
+                  </h3>
+                  {tripData.outstanding.length === 0 ? (
+                    <p className="text-sm text-green-600 italic">All caught up - no outstanding items.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                            <th className="pb-2 pr-3">WO#</th>
+                            <th className="pb-2 pr-3">Customer</th>
+                            <th className="pb-2 pr-3">Equipment</th>
+                            <th className="pb-2 pr-3">Returned</th>
+                            <th className="pb-2 pr-3">Notes</th>
+                            <th className="pb-2 pr-3 text-right">Invoice</th>
+                            <th className="pb-2 text-right text-orange-600">WW Owes Shop</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tripData.outstanding.map(row => {
+                            const inv = Number(row.amount_charged) || 0
+                            const pc = Number(row.parts_charged) || 0
+                            const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+                            return (
+                              <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                <td className="py-1.5 pr-3">
+                                  <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
+                                </td>
+                                <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs max-w-xs truncate">{String(row.work_done || row.complaint || '-')}</td>
+                                <td className="py-1.5 pr-3 text-right">{inv > 0 ? fmt(inv) : '-'}</td>
+                                <td className="py-1.5 text-right text-orange-600 font-medium">{owes > 0 ? fmt(owes) : '-'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 font-semibold">
+                            <td colSpan={6} className="pt-2 text-gray-600 text-right">Total Outstanding</td>
+                            <td className="pt-2 text-right text-orange-600">
+                              {fmt(tripData.outstanding.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </Section>
 
           {/* At the Shop */}
           <Section title="Currently at the Shop (Returned - Awaiting Payment)">
