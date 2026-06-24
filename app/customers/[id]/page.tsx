@@ -159,7 +159,7 @@ export default function CustomerDetail() {
   )
 
   const { customer: c, equipment, workOrders } = data
-  const activeJobs = workOrders.filter(wo => wo.status !== 'picked-up' && (wo.status as string) !== 'donated' && (wo.status as string) !== 'abandoned')
+  const activeJobs = workOrders.filter(wo => wo.status !== 'picked-up' && wo.status !== 'donated' && wo.status !== 'abandoned')
 
   return (
     <div className="max-w-2xl mx-auto px-3 pt-4 space-y-4">
