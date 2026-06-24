@@ -26,6 +26,8 @@ const STATUS_CFG: Record<WorkOrderStatus, { label: string; cls: string; dot: str
   'in-progress':   { label: 'In Progress',         cls: 'bg-blue-100 text-blue-700',    dot: 'bg-blue-500' },
   'waiting-parts': { label: 'Waiting Parts',       cls: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
   'complete':      { label: 'Ready for Pickup',    cls: 'bg-green-100 text-green-700',  dot: 'bg-green-500' },
+  'donated':       { label: 'Donated to WW',         cls: 'bg-purple-100 text-purple-700', dot: 'bg-purple-400' },
+  'abandoned':     { label: 'Abandoned - WW Property', cls: 'bg-red-100 text-red-700',    dot: 'bg-red-400' },
   'at-shop':       { label: 'At Referral Shop',    cls: 'bg-purple-100 text-purple-700',dot: 'bg-purple-500' },
   'picked-up':     { label: 'Picked Up',           cls: 'bg-slate-100 text-slate-600',  dot: 'bg-slate-400' },
 }
@@ -50,7 +52,7 @@ export default function WorkOrdersDashboard() {
       .catch(() => setLoading(false))
   }, [])
 
-  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up'
+  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned'
 
   const filtered = orders.filter(o => {
     if (tab === 'active')  return isActive(o)
@@ -59,7 +61,7 @@ export default function WorkOrdersDashboard() {
     if (tab === 'parts')   return o.status === 'waiting-parts'
     if (tab === 'ready')   return o.status === 'complete'
     if (tab === 'atshop')  return o.status === 'at-shop'
-    if (tab === 'done')    return o.status === 'picked-up'
+    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned'
     return true
   })
 
