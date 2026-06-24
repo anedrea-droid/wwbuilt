@@ -57,15 +57,18 @@ export async function GET(req: Request) {
 
     if (type === 'revenue') {
       const { rows } = await pool.query(
-        'SELECT TO_CHAR(DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)), \'YYYY-MM\') as month, ' +
-        'SUM(CASE WHEN c.source = \'referral\' ' +
-        'THEN COALESCE(NULLIF(wo.shop_payment_amount, 0), NULLIF(wo.amount_charged, 0), (wo.labor_hours * wo.labor_rate)) ' +
-        'ELSE CASE WHEN wo.amount_charged > 0 THEN wo.amount_charged ELSE (wo.labor_hours * wo.labor_rate) END ' +
-        'END) as revenue, ' +
-        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
-        'COUNT(DISTINCT wo.id) as job_count ' +
+        'SELECT ' +
+        'TO_CHAR(DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)), \'YYYY-MM\') as month, ' +
+        'COUNT(DISTINCT wo.id) as job_count, ' +
+        'COALESCE(SUM(' +
+        '  CASE ' +
+        '    WHEN COALESCE(wo.shop_payment_amount, 0) > 0 THEN wo.shop_payment_amount ' +
+        '    WHEN COALESCE(wo.amount_charged, 0) > 0 THEN wo.amount_charged ' +
+        '    ELSE COALESCE(wo.labor_hours, 0) * COALESCE(wo.labor_rate, 80) ' +
+        '  END' +
+        '), 0) as revenue, ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
         'FROM work_orders wo ' +
-        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE COALESCE(wo.date_complete, wo.referral_dropoff_date) IS NOT NULL ' +
         'GROUP BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date)) ' +
