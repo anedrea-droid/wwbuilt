@@ -83,7 +83,39 @@ export async function GET(req: Request) {
       return NextResponse.json(rows)
     }
 
-    if (type === 'referral-history') {
+    if (type === 'referral-trip') {
+      const tripDate = searchParams.get('date') || new Date().toISOString().slice(0, 10)
+      const baseSelect =
+        'SELECT wo.id, wo.order_number, wo.amount_charged, wo.status, ' +
+        'wo.referral_dropoff_date, wo.complaint, wo.work_done, wo.notes, ' +
+        'wo.shop_payment_received, ' +
+        'c.name as customer_name, c.referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, e.year, ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
+        'WHERE c.source = \'referral\' AND wo.referral_dropoff_date IS NOT NULL '
+      const thisTrip = await pool.query(
+        baseSelect +
+        'AND wo.referral_dropoff_date::date = $1 ' +
+        'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model, e.year ' +
+        'ORDER BY c.name ASC',
+        [tripDate]
+      )
+      const outstanding = await pool.query(
+        baseSelect +
+        'AND wo.referral_dropoff_date::date < $1 ' +
+        'AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
+        'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model, e.year ' +
+        'ORDER BY wo.referral_dropoff_date ASC',
+        [tripDate]
+      )
+      return NextResponse.json({ thisTrip: thisTrip.rows, outstanding: outstanding.rows, tripDate })
+    }
+
+        if (type === 'referral-history') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.status, wo.date_complete, wo.amount_charged, ' +
         'wo.referral_pickup_date, wo.referral_dropoff_date, ' +
