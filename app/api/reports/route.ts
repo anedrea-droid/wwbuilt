@@ -41,15 +41,16 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
-        'WHERE (' +
-        '  (c.source IS NULL OR c.source != \'referral\') ' +
-        '  AND wo.status IN (\'complete\', \'picked-up\') ' +
-        '  AND wo.amount_charged > 0 ' +
-        '  AND (wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
-        ') OR (' +
-        '  c.source = \'referral\' ' +
-        '  AND wo.referral_dropoff_date IS NOT NULL ' +
-        '  AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND (' +
+        '  (' +
+        '    (c.source IS NULL OR c.source != \'referral\') ' +
+        '    AND wo.amount_charged > 0 ' +
+        '    AND (wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
+        '  ) OR (' +
+        '    c.source = \'referral\' ' +
+        '    AND wo.referral_dropoff_date IS NOT NULL ' +
+        '    AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
+        '  )' +
         ') ' +
         'ORDER BY wo.date_in DESC'
       )
