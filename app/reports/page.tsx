@@ -93,14 +93,12 @@ export default function ReportsPage() {
     setLoading(true)
     const base = '/api/reports?'
     if (tab === 'financial') {
-      const [p, o, r] = await Promise.all([
+      const [p, o] = await Promise.all([
         fetch(base + 'type=payouts&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
         fetch(base + 'type=outstanding').then(x => x.json()),
-        fetch(base + 'type=revenue').then(x => x.json()),
       ])
       setPayouts(Array.isArray(p) ? p : [])
       setOutstanding(Array.isArray(o) ? o : [])
-      setRevenue(Array.isArray(r) ? r : [])
     }
     if (tab === 'referral') {
       const [a, h] = await Promise.all([
@@ -115,8 +113,12 @@ export default function ReportsPage() {
       setCompleted(Array.isArray(c) ? c : [])
     }
     if (tab === 'parts') {
-      const pp = await fetch(base + 'type=parts-pending').then(x => x.json())
+      const [pp, r] = await Promise.all([
+        fetch(base + 'type=parts-pending').then(x => x.json()),
+        fetch(base + 'type=revenue').then(x => x.json()),
+      ])
       setPendingParts(Array.isArray(pp) ? pp : [])
+      setRevenue(Array.isArray(r) ? r : [])
     }
     setLoading(false)
   }, [tab, fromDate, toDate])
@@ -311,6 +313,7 @@ export default function ReportsPage() {
                     <tr className="text-left text-gray-500 border-b text-xs uppercase">
                       <th className="pb-2 pr-3">WO#</th>
                       <th className="pb-2 pr-3">Customer</th>
+                      <th className="pb-2 pr-3">Type</th>
                       <th className="pb-2 pr-3">Equipment</th>
                       <th className="pb-2 pr-3">Date In</th>
                       <th className="pb-2 pr-3 text-right">Invoiced</th>
@@ -319,35 +322,45 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {outstanding.map(row => (
-                      <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                        <td className="py-1.5 pr-3">
-                          <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                            {String(row.order_number)}
-                          </Link>
-                        </td>
-                        <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                        <td className="py-1.5 pr-3 text-right font-medium">
-                          {Number(row.amount_charged) > 0
-                            ? fmt(row.amount_charged)
-                            : <span className="text-gray-400 text-xs">not invoiced</span>}
-                        </td>
-                        <td className="py-1.5 pr-3 text-right text-red-500">{Number(row.amount_paid) > 0 ? fmt(row.amount_paid) : '-'}</td>
-                        <td className="py-1.5 text-right font-semibold text-orange-600">
-                          {Number(row.amount_charged) > 0
-                            ? fmt(Number(row.amount_charged) - Number(row.amount_paid))
-                            : <span className="text-gray-400 text-xs">-</span>}
-                        </td>
-                      </tr>
-                    ))}
+                    {outstanding.map(row => {
+                      const isRef = row.customer_source === 'referral'
+                      const charged = Number(row.amount_charged) || 0
+                      const paid = Number(row.amount_paid) || 0
+                      return (
+                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="py-1.5 pr-3">
+                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                              {String(row.order_number)}
+                            </Link>
+                          </td>
+                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3">
+                            {isRef
+                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
+                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                          <td className="py-1.5 pr-3 text-right font-medium">
+                            {charged > 0
+                              ? fmt(charged)
+                              : <span className="text-gray-400 text-xs">not invoiced</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-right text-red-500">{paid > 0 ? fmt(paid) : '-'}</td>
+                          <td className="py-1.5 text-right font-semibold text-orange-600">
+                            {charged > 0
+                              ? fmt(charged - paid)
+                              : <span className="text-gray-400 text-xs">-</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 font-semibold">
-                      <td colSpan={4} className="pt-2 text-gray-600">Outstanding Balance</td>
+                      <td colSpan={5} className="pt-2 text-gray-600">Outstanding Balance</td>
                       <td colSpan={2} className="pt-2 text-right text-red-600">
-                        {fmt(outstanding.reduce((s, r) => s + Number(r.amount_charged || 0) - Number(r.amount_paid || 0), 0))}
+                        {fmt(outstanding.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
                       </td>
                     </tr>
                   </tfoot>
@@ -356,40 +369,6 @@ export default function ReportsPage() {
             )}
           </Section>
 
-          {/* Revenue vs Parts Cost */}
-          <Section title="Revenue vs Parts Cost (Monthly)">
-            {revenue.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">Month</th>
-                      <th className="pb-2 pr-3 text-right">Jobs</th>
-                      <th className="pb-2 pr-3 text-right">Revenue</th>
-                      <th className="pb-2 pr-3 text-right">Parts Chg</th>
-                      <th className="pb-2 text-right">Gross Margin</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {revenue.map(row => {
-                      const rev = Number(row.revenue) || 0
-                      const cost = Number(row.parts_cost) || 0
-                      const margin = rev - cost
-                      return (
-                        <tr key={String(row.month)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3 font-medium">{String(row.month)}</td>
-                          <td className="py-1.5 pr-3 text-right text-gray-500">{String(row.job_count)}</td>
-                          <td className="py-1.5 pr-3 text-right">{fmt(rev)}</td>
-                          <td className="py-1.5 pr-3 text-right text-red-500">{fmt(cost)}</td>
-                          <td className="py-1.5 text-right font-medium text-green-700">{fmt(margin)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
         </div>
       )}
 
@@ -749,6 +728,41 @@ export default function ReportsPage() {
                       </td>
                     </tr>
                   </tfoot>
+                </table>
+              </div>
+            )}
+          </Section>
+
+          {/* Revenue vs Parts Cost */}
+          <Section title="Revenue vs Parts Cost (Monthly)">
+            {revenue.length === 0 ? <Empty /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                      <th className="pb-2 pr-3">Month</th>
+                      <th className="pb-2 pr-3 text-right">Jobs</th>
+                      <th className="pb-2 pr-3 text-right">Revenue</th>
+                      <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                      <th className="pb-2 text-right">Gross Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {revenue.map(row => {
+                      const rev = Number(row.revenue) || 0
+                      const cost = Number(row.parts_cost) || 0
+                      const margin = rev - cost
+                      return (
+                        <tr key={String(row.month)} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="py-1.5 pr-3 font-medium">{String(row.month)}</td>
+                          <td className="py-1.5 pr-3 text-right text-gray-500">{String(row.job_count)}</td>
+                          <td className="py-1.5 pr-3 text-right">{fmt(rev)}</td>
+                          <td className="py-1.5 pr-3 text-right text-red-500">{fmt(cost)}</td>
+                          <td className="py-1.5 text-right font-medium text-green-700">{fmt(margin)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
                 </table>
               </div>
             )}
