@@ -56,6 +56,9 @@ export default function WorkOrderDetail() {
   const [wwNotes, setWwNotes] = useState('')
   const [editingPart, setEditingPart] = useState<string | null>(null)
   const [partForm, setPartForm] = useState<Partial<Part>>({})
+  const [photos, setPhotos] = useState<{id:string;url:string;public_id:string}[]>([])
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoError, setPhotoError] = useState('')
 
   function normalizeDates(data: WorkOrder): WorkOrder {
     const d = (v: unknown) => v ? String(v).slice(0, 10) : ''
@@ -67,6 +70,7 @@ export default function WorkOrderDetail() {
   }
 
   useEffect(() => {
+    fetch('/api/work-orders/' + id + '/photos').then(r => r.json()).then(d => setPhotos(Array.isArray(d) ? d : []))
     fetch('/api/work-orders/' + id)
       .then(r => r.json()).then(data => { const n = normalizeDates(data); setWo(n); setForm(n) })
     fetch('/api/parts?workOrderId=' + id)
@@ -884,6 +888,50 @@ export default function WorkOrderDetail() {
             </div>
           )
         })()}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-gray-800">Photos</h2>
+          <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1">
+            {photoUploading ? 'Uploading...' : '+ Add Photo'}
+            <input type="file" accept="image/*" className="hidden" disabled={photoUploading} onChange={async e => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              setPhotoUploading(true)
+              setPhotoError('')
+              const fd = new FormData()
+              fd.append('file', file)
+              try {
+                const res = await fetch('/api/work-orders/' + id + '/photos', { method: 'POST', body: fd })
+                const data = await res.json()
+                if (res.ok) setPhotos(prev => [...prev, data])
+                else setPhotoError(data.error || 'Upload failed')
+              } catch { setPhotoError('Upload failed') }
+              setPhotoUploading(false)
+              e.target.value = ''
+            }} />
+          </label>
+        </div>
+        {photoError && <p className="text-xs text-red-500 mb-2">{photoError}</p>}
+        {photos.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No photos yet</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            {photos.map(photo => (
+              <div key={photo.id} className="relative group">
+                <a href={photo.url} target="_blank" rel="noreferrer">
+                  <img src={photo.url} alt="Work order photo" className="w-full h-28 object-cover rounded-lg border" />
+                </a>
+                <button onClick={async () => {
+                  if (!confirm('Delete this photo?')) return
+                  const res = await fetch('/api/work-orders/' + id + '/photos', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({photoId: photo.id}) })
+                  if (res.ok) setPhotos(prev => prev.filter(p => p.id !== photo.id))
+                }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs hidden group-hover:flex items-center justify-center">x</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="text-center pb-4">
