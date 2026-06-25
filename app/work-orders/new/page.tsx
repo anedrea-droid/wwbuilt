@@ -45,11 +45,16 @@ export default function NewWorkOrder() {
   const [newEquipType, setNewEquipType] = useState('Mower')
   const [newEquipTypeOther, setNewEquipTypeOther] = useState('')
   const [newEquipMake, setNewEquipMake] = useState('')
+  const [newEquipMakeOther, setNewEquipMakeOther] = useState('')
   const [newEquipModel, setNewEquipModel] = useState('')
   const [newEquipSerial, setNewEquipSerial] = useState('')
+  const [equipMakes, setEquipMakes] = useState<{id:string;name:string}[]>([])
 
   useEffect(() => {
     fetch('/api/customers').then(r => r.json()).then(setCustomers)
+    fetch('/api/settings/equipment-makes').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setEquipMakes(data)
+    })
     fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
       if (Array.isArray(data)) {
         setReferralShops(data)
@@ -61,7 +66,7 @@ export default function NewWorkOrder() {
 
   const loadEquipment = useCallback((custId: string) => {
     if (!custId) { setEquipment([]); return }
-    fetch(`/api/equipment?customerId=${custId}`).then(r => r.json()).then(setEquipment)
+    fetch('/api/equipment?customerId=' + custId).then(r => r.json()).then(setEquipment)
   }, [])
 
   useEffect(() => {
@@ -98,13 +103,13 @@ export default function NewWorkOrder() {
     const res = await fetch('/api/equipment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: selectedCustomerId, type: newEquipType === 'Other' ? (newEquipTypeOther.trim() || 'Other') : newEquipType, make: newEquipMake, model: newEquipModel, serialNumber: newEquipSerial })
+      body: JSON.stringify({ customerId: selectedCustomerId, type: newEquipType === 'Other' ? (newEquipTypeOther.trim() || 'Other') : newEquipType, make: newEquipMake === 'Other' ? (newEquipMakeOther.trim() || 'Other') : newEquipMake, model: newEquipModel, serialNumber: newEquipSerial })
     })
     const e = await res.json()
     setEquipment(prev => [...prev, e])
     setSelectedEquipmentId(e.id)
     setAddingEquip(false)
-    setNewEquipMake(''); setNewEquipModel(''); setNewEquipSerial(''); setNewEquipType('Mower')
+    setNewEquipMake(''); setNewEquipMakeOther(''); setNewEquipModel(''); setNewEquipSerial(''); setNewEquipType('Mower')
   }
 
   async function handleSubmit() {
@@ -117,7 +122,7 @@ export default function NewWorkOrder() {
         body: JSON.stringify({ customerId: selectedCustomerId, equipmentId: selectedEquipmentId, technician, complaint, dateIn, notes })
       })
       const wo = await res.json()
-      router.push(`/work-orders/${wo.id}`)
+      router.push('/work-orders/' + wo.id)
     } catch {
       setSaving(false)
     }
@@ -297,7 +302,17 @@ export default function NewWorkOrder() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs">Make *</Label>
-                      <Input value={newEquipMake} onChange={e => setNewEquipMake(e.target.value)} placeholder="Husqvarna, STIHL..." />
+                      <select
+                        value={newEquipMake}
+                        onChange={e => { setNewEquipMake(e.target.value); if (e.target.value !== 'Other') setNewEquipMakeOther('') }}
+                        className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                        <option value="">Select make...</option>
+                        {equipMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                        <option value="Other">Other (type below)</option>
+                      </select>
+                      {newEquipMake === 'Other' && (
+                        <Input className="mt-1" value={newEquipMakeOther} onChange={e => setNewEquipMakeOther(e.target.value)} placeholder="Type make name..." />
+                      )}
                     </div>
                     <div>
                       <Label className="text-xs">Model</Label>
@@ -309,7 +324,7 @@ export default function NewWorkOrder() {
                     <Input value={newEquipSerial} onChange={e => setNewEquipSerial(e.target.value)} placeholder="Optional" />
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={handleSaveEquipment} disabled={!newEquipMake.trim()} className="flex-1 bg-orange-600 hover:bg-orange-700">
+                    <Button size="sm" onClick={handleSaveEquipment} disabled={!newEquipMake || (newEquipMake === 'Other' && !newEquipMakeOther.trim())} className="flex-1 bg-orange-600 hover:bg-orange-700">
                       Save Equipment
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setAddingEquip(false)} className="flex-1">Cancel</Button>
