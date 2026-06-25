@@ -55,18 +55,16 @@ export default function ReportsPage() {
     const fmtM = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
     const rows1 = tripData.thisTrip.map(r => {
       const inv = Number(r.amount_charged) || 0
-      const pc = Number(r.parts_charged) || 0
-      const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+      const owes = (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20
       return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
     }).join('')
     const rows2 = tripData.outstanding.map(r => {
       const inv = Number(r.amount_charged) || 0
-      const pc = Number(r.parts_charged) || 0
-      const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+      const owes = (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20
       return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
     }).join('')
     const calcInv = (r: Record<string,unknown>) => { const sa = Number(r.shop_payment_amount)||0; return sa > 0 ? sa : (Number(r.amount_charged)||0) }
-    const calcOwes = (r: Record<string,unknown>) => { const inv = calcInv(r); const pc = Number(r.parts_charged)||0; const ap = inv-pc; return ap>0?ap*0.20:0 }
+    const calcOwes = (r: Record<string,unknown>) => { return (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20 }
     const tot1 = tripData.thisTrip.reduce((s, r) => s + calcOwes(r), 0)
     const tot2 = tripData.outstanding.reduce((s, r) => s + calcOwes(r), 0)
     const invTot1 = tripData.thisTrip.reduce((s, r) => s + calcInv(r), 0)
@@ -436,8 +434,7 @@ export default function ReportsPage() {
                           {tripData.thisTrip.map(row => {
                             const shopAmt = Number(row.shop_payment_amount) || 0
                             const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
-                            const pc = Number(row.parts_charged) || 0
-                            const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+                            const owes = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 0) * 0.20
                             return (
                               <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="py-1.5 pr-3">
@@ -454,17 +451,12 @@ export default function ReportsPage() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 font-semibold">
-                            <td colSpan={4} className="pt-2 text-gray-600 text-right">Invoice Total</td>
+                            <td colSpan={4}></td>
                             <td className="pt-2 text-right">
                               {fmt(tripData.thisTrip.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
                             </td>
-                            <td></td>
-                          </tr>
-                          <tr className="font-semibold">
-                            <td colSpan={4} className="pt-1 text-gray-600 text-right">Total WW Owes Shop (Today)</td>
-                            <td></td>
-                            <td className="pt-1 text-right text-orange-600">
-                              {fmt(tripData.thisTrip.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; const inv = sa > 0 ? sa : (Number(r.amount_charged)||0); const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
+                            <td className="pt-2 text-right text-orange-600">
+                              {fmt(tripData.thisTrip.reduce((s, r) => s + (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20, 0))}
                             </td>
                           </tr>
                         </tfoot>
@@ -498,8 +490,7 @@ export default function ReportsPage() {
                           {tripData.outstanding.map(row => {
                             const shopAmt = Number(row.shop_payment_amount) || 0
                             const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
-                            const pc = Number(row.parts_charged) || 0
-                            const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
+                            const owes = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 0) * 0.20
                             return (
                               <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="py-1.5 pr-3">
@@ -517,17 +508,12 @@ export default function ReportsPage() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 font-semibold">
-                            <td colSpan={5} className="pt-2 text-gray-600 text-right">Invoice Total</td>
+                            <td colSpan={5}></td>
                             <td className="pt-2 text-right">
                               {fmt(tripData.outstanding.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
                             </td>
-                            <td></td>
-                          </tr>
-                          <tr className="font-semibold">
-                            <td colSpan={5} className="pt-1 text-gray-600 text-right">Total WW Owes Shop</td>
-                            <td></td>
-                            <td className="pt-1 text-right text-orange-600">
-                              {fmt(tripData.outstanding.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; const inv = sa > 0 ? sa : (Number(r.amount_charged)||0); const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
+                            <td className="pt-2 text-right text-orange-600">
+                              {fmt(tripData.outstanding.reduce((s, r) => s + (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20, 0))}
                             </td>
                           </tr>
                         </tfoot>
