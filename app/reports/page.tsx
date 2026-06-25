@@ -84,9 +84,17 @@ export default function ReportsPage() {
 
     async function loadTrip(date: string) {
     setTripLoading(true)
-    const res = await fetch('/api/reports?type=referral-trip&date=' + date)
-    const data = await res.json()
-    setTripData(data)
+    try {
+      const res = await fetch('/api/reports?type=referral-trip&date=' + date)
+      const data = await res.json()
+      setTripData({
+        thisTrip: Array.isArray(data.thisTrip) ? data.thisTrip : [],
+        outstanding: Array.isArray(data.outstanding) ? data.outstanding : [],
+        tripDate: data.tripDate || date,
+      })
+    } catch {
+      setTripData({ thisTrip: [], outstanding: [], tripDate: date })
+    }
     setTripLoading(false)
   }
 
