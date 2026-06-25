@@ -211,7 +211,8 @@ export async function GET(req: Request) {
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
-        'COUNT(p.id) as parts_count ' +
+        'COUNT(p.id) as parts_count, ' +
+        'STRING_AGG(p.name || CASE WHEN p.quantity > 1 THEN \'  (x\' || p.quantity || \')\'  ELSE \'\' END, \', \' ORDER BY p.name) as part_names ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
