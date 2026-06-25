@@ -62,10 +62,16 @@ export default function CustomerDetail() {
   const [newType, setNewType] = useState('Mower')
   const [newTypeOther, setNewTypeOther] = useState('')
   const [newMake, setNewMake] = useState('')
+  const [newMakeOther, setNewMakeOther] = useState('')
+  const [editEquipMakeOther, setEditEquipMakeOther] = useState('')
+  const [equipMakes, setEquipMakes] = useState<{id:string;name:string}[]>([])
   const [newModel, setNewModel] = useState('')
   const [newSerial, setNewSerial] = useState('')
 
   const load = useCallback(async () => {
+    fetch('/api/settings/equipment-makes').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setEquipMakes(data)
+    })
     try {
       const res = await fetch('/api/customers/' + id)
       const d = await res.json()
@@ -136,10 +142,10 @@ export default function CustomerDetail() {
     await fetch('/api/equipment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: id, type: newType === 'Other' ? (newTypeOther.trim() || 'Other') : newType, make: newMake, model: newModel, serialNumber: newSerial })
+      body: JSON.stringify({ customerId: id, type: newType === 'Other' ? (newTypeOther.trim() || 'Other') : newType, make: newMake === 'Other' ? (newMakeOther.trim() || 'Other') : newMake, model: newModel, serialNumber: newSerial })
     })
     setAddingEquip(false)
-    setNewMake(''); setNewModel(''); setNewSerial(''); setNewType('Mower')
+    setNewMake(''); setNewMakeOther(''); setNewModel(''); setNewSerial(''); setNewType('Mower')
     setSaving(false)
     await load()
   }
@@ -287,7 +293,17 @@ export default function CustomerDetail() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Make *</Label>
-                  <Input value={newMake} onChange={e => setNewMake(e.target.value)} placeholder="Husqvarna" />
+                  <select
+                    value={newMake}
+                    onChange={e => { setNewMake(e.target.value); if (e.target.value !== 'Other') setNewMakeOther('') }}
+                    className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                    <option value="">Select make...</option>
+                    {equipMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                    <option value="Other">Other (type below)</option>
+                  </select>
+                  {newMake === 'Other' && (
+                    <Input className="mt-1" value={newMakeOther} onChange={e => setNewMakeOther(e.target.value)} placeholder="Type make name..." />
+                  )}
                 </div>
                 <div>
                   <Label className="text-xs">Model</Label>
@@ -299,7 +315,7 @@ export default function CustomerDetail() {
                 <Input value={newSerial} onChange={e => setNewSerial(e.target.value)} placeholder="Optional" />
               </div>
               <div className="flex gap-2">
-                <Button size="sm" onClick={addEquipment} disabled={!newMake.trim() || saving} className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button>
+                <Button size="sm" onClick={addEquipment} disabled={!newMake || (newMake === 'Other' && !newMakeOther.trim()) || saving} className="flex-1 bg-orange-600 hover:bg-orange-700">Save</Button>
                 <Button size="sm" variant="outline" onClick={() => setAddingEquip(false)} className="flex-1">Cancel</Button>
               </div>
             </div>
@@ -324,7 +340,24 @@ export default function CustomerDetail() {
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-xs font-medium text-gray-500">Make</label>
-                        <Input value={editEquip.make} onChange={ev => setEditEquip(f => ({ ...f, make: ev.target.value }))} className="mt-1" />
+                        <select
+                          value={equipMakes.some(m => m.name === editEquip.make) ? editEquip.make : (editEquip.make ? 'Other' : '')}
+                          onChange={ev => {
+                            if (ev.target.value === 'Other') { setEditEquipMakeOther(editEquip.make); setEditEquip(f => ({ ...f, make: 'Other' })) }
+                            else { setEditEquip(f => ({ ...f, make: ev.target.value })); setEditEquipMakeOther('') }
+                          }}
+                          className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                          <option value="">Select make...</option>
+                          {equipMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                          <option value="Other">Other (type below)</option>
+                        </select>
+                        {(editEquip.make === 'Other' || (!equipMakes.some(m => m.name === editEquip.make) && editEquip.make)) && (
+                          <Input className="mt-1" value={editEquip.make === 'Other' ? editEquipMakeOther : editEquip.make}
+                            onChange={ev => {
+                              setEditEquipMakeOther(ev.target.value)
+                              setEditEquip(f => ({ ...f, make: ev.target.value }))
+                            }} placeholder="Type make name..." />
+                        )}
                       </div>
                       <div>
                         <label className="text-xs font-medium text-gray-500">Model</label>
