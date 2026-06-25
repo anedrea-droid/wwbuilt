@@ -55,23 +55,23 @@ export default function ReportsPage() {
     const fmtM = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
     const rows1 = tripData.thisTrip.map(r => {
       const inv = Number(r.amount_charged) || 0
-      const owes = (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20
-      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
+      const owes = Number(r.owes_amount) || 0
+      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
     }).join('')
     const rows2 = tripData.outstanding.map(r => {
       const inv = Number(r.amount_charged) || 0
-      const owes = (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20
-      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
+      const owes = Number(r.owes_amount) || 0
+      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
     }).join('')
     const calcInv = (r: Record<string,unknown>) => { const sa = Number(r.shop_payment_amount)||0; return sa > 0 ? sa : (Number(r.amount_charged)||0) }
-    const calcOwes = (r: Record<string,unknown>) => { return (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20 }
+    const calcOwes = (r: Record<string,unknown>) => { return Number(r.owes_amount) || 0 }
     const tot1 = tripData.thisTrip.reduce((s, r) => s + calcOwes(r), 0)
     const tot2 = tripData.outstanding.reduce((s, r) => s + calcOwes(r), 0)
     const invTot1 = tripData.thisTrip.reduce((s, r) => s + calcInv(r), 0)
     const invTot2 = tripData.outstanding.reduce((s, r) => s + calcInv(r), 0)
     const w = window.open('', '_blank')
     if (!w) return
-    w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:8px}th{text-align:left;border-bottom:2px solid #333;padding:4px 8px 4px 0;font-size:11px;text-transform:uppercase}td{padding:4px 8px 4px 0;border-bottom:1px solid #eee;vertical-align:top}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}@media print{button{display:none}}</style></head><body>')
+    w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:8px;table-layout:fixed}th{text-align:left;border-bottom:2px solid #333;padding:4px 6px 4px 0;font-size:11px;text-transform:uppercase;overflow:hidden}td{padding:4px 6px 4px 0;border-bottom:1px solid #eee;vertical-align:top;overflow:hidden;word-break:break-word}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}@media print{button{display:none}}</style></head><body>')
     w.document.write('<h1>WW Small Engine - Shop Trip Sheet</h1>')
     w.document.write('<p>Referral Shop: Seguin Small Engine &nbsp;&nbsp; Date: ' + tripData.tripDate + '</p>')
     w.document.write('<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">Print</button>')
@@ -434,7 +434,7 @@ export default function ReportsPage() {
                           {tripData.thisTrip.map(row => {
                             const shopAmt = Number(row.shop_payment_amount) || 0
                             const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
-                            const owes = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 0) * 0.20
+                            const owes = Number(row.owes_amount) || 0
                             return (
                               <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="py-1.5 pr-3">
@@ -456,7 +456,7 @@ export default function ReportsPage() {
                               {fmt(tripData.thisTrip.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
                             </td>
                             <td className="pt-2 text-right text-orange-600">
-                              {fmt(tripData.thisTrip.reduce((s, r) => s + (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20, 0))}
+                              {fmt(tripData.thisTrip.reduce((s, r) => s + (Number(r.owes_amount) || 0), 0))}
                             </td>
                           </tr>
                         </tfoot>
@@ -490,7 +490,7 @@ export default function ReportsPage() {
                           {tripData.outstanding.map(row => {
                             const shopAmt = Number(row.shop_payment_amount) || 0
                             const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
-                            const owes = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 0) * 0.20
+                            const owes = Number(row.owes_amount) || 0
                             return (
                               <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="py-1.5 pr-3">
@@ -513,7 +513,7 @@ export default function ReportsPage() {
                               {fmt(tripData.outstanding.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
                             </td>
                             <td className="pt-2 text-right text-orange-600">
-                              {fmt(tripData.outstanding.reduce((s, r) => s + (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20, 0))}
+                              {fmt(tripData.outstanding.reduce((s, r) => s + (Number(r.owes_amount) || 0), 0))}
                             </td>
                           </tr>
                         </tfoot>
