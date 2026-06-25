@@ -319,7 +319,7 @@ export default function WorkOrderDetail() {
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <Link href="/" className="text-sm text-orange-500 hover:underline">Back to Work Orders</Link>
           <h1 className="text-2xl font-bold mt-1">Work Order #{wo.orderNumber}</h1>
@@ -337,7 +337,7 @@ export default function WorkOrderDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow p-4">
           <h2 className="font-semibold text-gray-700 mb-2">Customer</h2>
           {customer ? (
@@ -381,7 +381,7 @@ export default function WorkOrderDetail() {
             <button onClick={() => setEditing(true)} className="text-sm text-orange-500 hover:underline">Edit</button>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
             {editing ? (
@@ -395,7 +395,7 @@ export default function WorkOrderDetail() {
           </div>
           {field('Technician', 'technician')}
         </div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {field('Date In', 'dateIn', 'date')}
           {field('Date Complete', 'dateComplete', 'date')}
           {field('Date Picked Up', 'datePickedUp', 'date')}
@@ -412,11 +412,11 @@ export default function WorkOrderDetail() {
           <h2 className="font-semibold text-gray-700">Parts</h2>
           <div className="flex gap-2">
             <button onClick={() => { setShowCatalog(v => !v); setShowAddPart(false) }}
-              className="text-sm bg-blue-500 text-white px-3 py-1 rounded-lg hover:bg-blue-600">
+              className="text-sm bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600">
               Pick from Catalog
             </button>
             <button onClick={() => { setShowAddPart(v => !v); setShowCatalog(false) }}
-              className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+              className="text-sm bg-orange-500 text-white px-3 py-2 rounded-lg hover:bg-orange-600">
               + Add Part
             </button>
           </div>
@@ -480,7 +480,7 @@ export default function WorkOrderDetail() {
                 Part is in stock - will be marked as received immediately.
               </p>
             )}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-500">Part Name *</label>
                 <input value={newPart.name} onChange={e => setNewPart(p => ({ ...p, name: e.target.value }))}
@@ -537,7 +537,7 @@ export default function WorkOrderDetail() {
               <div key={part.id} className={'border rounded-lg p-3 ' + (part.status === 'received' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200')}>
                 {editingPart === part.id ? (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="text-xs text-gray-500">Part Name</label>
                         <input value={partForm.name || ''} onChange={e => setPartForm(f => ({ ...f, name: e.target.value }))}
@@ -643,7 +643,7 @@ export default function WorkOrderDetail() {
             <button onClick={() => setEditing(true)} className="text-xs text-orange-500 hover:underline">Edit</button>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {field('Labor Hours', 'laborHours', 'number')}
           {field('Labor Rate ($/hr)', 'laborRate', 'number')}
         </div>
@@ -683,7 +683,7 @@ export default function WorkOrderDetail() {
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">NOT INVOICED</span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Payment Method</label>
               {editing ? (
@@ -732,7 +732,7 @@ export default function WorkOrderDetail() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Picked Up From Shop</label>
               {editing ? (
@@ -748,7 +748,7 @@ export default function WorkOrderDetail() {
               ) : <p className="text-sm text-gray-800">{wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0, 10) : '-'}</p>}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Shop Payment Amount ($)</label>
               {editing ? (
@@ -792,7 +792,7 @@ export default function WorkOrderDetail() {
                   : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">OWED</span>
                 }
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Commission Owed</label>
                   <p className="text-sm font-medium text-orange-700">
@@ -917,7 +917,7 @@ export default function WorkOrderDetail() {
         {photos.length === 0 ? (
           <p className="text-sm text-gray-400 italic">No photos yet</p>
         ) : (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {photos.map(photo => (
               <div key={photo.id} className="relative group">
                 <a href={photo.url} target="_blank" rel="noreferrer">
