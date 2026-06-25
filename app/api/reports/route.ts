@@ -109,7 +109,7 @@ export async function GET(req: Request) {
       const tripDate = searchParams.get('date') || new Date().toISOString().slice(0, 10)
       try {
         const baseSelect =
-          'SELECT wo.id, wo.order_number, wo.amount_charged, wo.status, ' +
+          'SELECT wo.id, wo.order_number, wo.amount_charged, wo.shop_payment_amount, wo.status, ' +
           'wo.referral_dropoff_date, wo.complaint, wo.work_done, wo.notes, ' +
           'wo.shop_payment_received, ' +
           'c.name as customer_name, c.referral_shop, ' +
