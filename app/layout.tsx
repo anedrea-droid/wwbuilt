@@ -7,13 +7,33 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 
 export const metadata: Metadata = {
   title: "WW Small Engine",
-  description: "Shop work order and customer tracker",
+  description: "Wade & Wayne Small Engine Repair - Shop Management",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "WW Engine",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/icon-180.png", sizes: "180x180", type: "image/png" }],
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans bg-slate-50 min-h-screen`}>
+      <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="WW Engine" />
+        <meta name="theme-color" content="#f97316" />
+      </head>
+      <body className={inter.variable + " font-sans bg-slate-50 min-h-screen"}>
         <Nav />
         <main className="pb-24 md:pb-8">
           {children}
