@@ -781,7 +781,6 @@ export default function ReportsPage() {
                         <th className="pb-2 pr-3">Date In</th>
                         <th className="pb-2 pr-3">Customer</th>
                         <th className="pb-2 pr-3">Equipment</th>
-                        <th className="pb-2 pr-3 text-right">Parts</th>
                         <th className="pb-2 pr-3">Part(s)</th>
                         <th className="pb-2 pr-3 text-right">WW Paid</th>
                         <th className="pb-2 pr-3 text-right">Charged to Customer</th>
@@ -803,7 +802,6 @@ export default function ReportsPage() {
                             <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
                             <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                            <td className="py-1.5 pr-3 text-right text-gray-500">{String(row.parts_count)}</td>
                             <td className="py-1.5 pr-3 text-xs text-gray-600">{String(row.part_names || '-')}</td>
                             <td className="py-1.5 pr-3 text-right text-red-500">{fmt(cost)}</td>
                             <td className="py-1.5 pr-3 text-right">{fmt(charged)}</td>
@@ -814,9 +812,7 @@ export default function ReportsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 font-semibold">
-                        <td colSpan={4} className="pt-2 text-gray-600">{partsReport.length} work order{partsReport.length !== 1 ? 's' : ''} with parts</td>
-                        <td className="pt-2 text-right text-gray-500">{partsReport.reduce((s, r) => s + (Number(r.parts_count) || 0), 0)}</td>
-                        <td className="pt-2"></td>
+                        <td colSpan={5} className="pt-2 text-gray-600">{partsReport.length} work order{partsReport.length !== 1 ? 's' : ''} with parts</td>
                         <td className="pt-2 text-right text-red-600">{fmt(totalCost)}</td>
                         <td className="pt-2 text-right">{fmt(totalCharged)}</td>
                         <td className="pt-2 text-right text-green-700">{fmt(totalProfit)}</td>
