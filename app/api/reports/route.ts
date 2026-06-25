@@ -111,6 +111,7 @@ export async function GET(req: Request) {
         const baseSelect =
           'SELECT wo.id, wo.order_number, wo.amount_charged, wo.shop_payment_amount, wo.status, ' +
           'wo.labor_hours, wo.labor_rate, ' +
+          'COALESCE(wo.labor_hours, 0) * COALESCE(wo.labor_rate, 80) * 0.20 AS owes_amount, ' +
           'wo.referral_dropoff_date, wo.complaint, wo.work_done, wo.notes, ' +
           'wo.shop_payment_received, ' +
           'c.name as customer_name, c.referral_shop, ' +
