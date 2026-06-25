@@ -1,25 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 
-function getToken() {
-  const pass = process.env.SITE_PASSWORD || 'ww53r'
-  return crypto.createHash('sha256').update(pass + 'ww-salt-2025').digest('hex')
+async function hashPassword(pass: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(pass + "ww-salt-2025")
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("")
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/login') || pathname.startsWith('/api/auth')) {
+
+  if (pathname.startsWith("/login") || pathname.startsWith("/api/auth")) {
     return NextResponse.next()
   }
-  const cookie = request.cookies.get('ww_auth')?.value
-  if (cookie !== getToken()) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+
+  const pass = process.env.SITE_PASSWORD || "ww53r"
+  const expectedToken = await hashPassword(pass)
+  const cookie = request.cookies.get("ww_auth")
+
+  if (!cookie || cookie.value !== expectedToken) {
+    const loginUrl = new URL("/login", request.url)
+    return NextResponse.redirect(loginUrl)
   }
+
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json).*)",
+  ],
 }
