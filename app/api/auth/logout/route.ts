@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 export async function POST() {
-  const res = NextResponse.json({ success: true })
-  res.cookies.set('ww_auth', '', { maxAge: 0, path: '/' })
-  return res
+  const cookieStore = await cookies()
+  cookieStore.delete("ww_auth")
+  return NextResponse.json({ ok: true })
 }
