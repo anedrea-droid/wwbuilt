@@ -65,8 +65,12 @@ export default function ReportsPage() {
       const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
       return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td>' + (inv > 0 ? fmtM(inv) : '-') + '</td><td>' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
     }).join('')
-    const tot1 = tripData.thisTrip.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s + (ap>0?ap*0.20:0) }, 0)
-    const tot2 = tripData.outstanding.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s + (ap>0?ap*0.20:0) }, 0)
+    const calcInv = (r: Record<string,unknown>) => { const sa = Number(r.shop_payment_amount)||0; return sa > 0 ? sa : (Number(r.amount_charged)||0) }
+    const calcOwes = (r: Record<string,unknown>) => { const inv = calcInv(r); const pc = Number(r.parts_charged)||0; const ap = inv-pc; return ap>0?ap*0.20:0 }
+    const tot1 = tripData.thisTrip.reduce((s, r) => s + calcOwes(r), 0)
+    const tot2 = tripData.outstanding.reduce((s, r) => s + calcOwes(r), 0)
+    const invTot1 = tripData.thisTrip.reduce((s, r) => s + calcInv(r), 0)
+    const invTot2 = tripData.outstanding.reduce((s, r) => s + calcInv(r), 0)
     const w = window.open('', '_blank')
     if (!w) return
     w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:8px}th{text-align:left;border-bottom:2px solid #333;padding:4px 8px 4px 0;font-size:11px;text-transform:uppercase}td{padding:4px 8px 4px 0;border-bottom:1px solid #eee;vertical-align:top}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}@media print{button{display:none}}</style></head><body>')
@@ -430,7 +434,8 @@ export default function ReportsPage() {
                         </thead>
                         <tbody>
                           {tripData.thisTrip.map(row => {
-                            const inv = Number(row.amount_charged) || 0
+                            const shopAmt = Number(row.shop_payment_amount) || 0
+                            const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
                             const pc = Number(row.parts_charged) || 0
                             const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
                             return (
@@ -449,9 +454,17 @@ export default function ReportsPage() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 font-semibold">
-                            <td colSpan={5} className="pt-2 text-gray-600 text-right">Total WW Owes (Today)</td>
-                            <td className="pt-2 text-right text-orange-600">
-                              {fmt(tripData.thisTrip.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
+                            <td colSpan={4} className="pt-2 text-gray-600 text-right">Invoice Total</td>
+                            <td className="pt-2 text-right">
+                              {fmt(tripData.thisTrip.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
+                            </td>
+                            <td></td>
+                          </tr>
+                          <tr className="font-semibold">
+                            <td colSpan={4} className="pt-1 text-gray-600 text-right">Total WW Owes Shop (Today)</td>
+                            <td></td>
+                            <td className="pt-1 text-right text-orange-600">
+                              {fmt(tripData.thisTrip.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; const inv = sa > 0 ? sa : (Number(r.amount_charged)||0); const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
                             </td>
                           </tr>
                         </tfoot>
@@ -483,7 +496,8 @@ export default function ReportsPage() {
                         </thead>
                         <tbody>
                           {tripData.outstanding.map(row => {
-                            const inv = Number(row.amount_charged) || 0
+                            const shopAmt = Number(row.shop_payment_amount) || 0
+                            const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
                             const pc = Number(row.parts_charged) || 0
                             const owes = (inv - pc) > 0 ? (inv - pc) * 0.20 : 0
                             return (
@@ -503,9 +517,17 @@ export default function ReportsPage() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 font-semibold">
-                            <td colSpan={6} className="pt-2 text-gray-600 text-right">Total Outstanding</td>
-                            <td className="pt-2 text-right text-orange-600">
-                              {fmt(tripData.outstanding.reduce((s, r) => { const inv = Number(r.amount_charged)||0; const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
+                            <td colSpan={5} className="pt-2 text-gray-600 text-right">Invoice Total</td>
+                            <td className="pt-2 text-right">
+                              {fmt(tripData.outstanding.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
+                            </td>
+                            <td></td>
+                          </tr>
+                          <tr className="font-semibold">
+                            <td colSpan={5} className="pt-1 text-gray-600 text-right">Total WW Owes Shop</td>
+                            <td></td>
+                            <td className="pt-1 text-right text-orange-600">
+                              {fmt(tripData.outstanding.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; const inv = sa > 0 ? sa : (Number(r.amount_charged)||0); const pc = Number(r.parts_charged)||0; const ap = inv-pc; return s+(ap>0?ap*0.20:0) }, 0))}
                             </td>
                           </tr>
                         </tfoot>
