@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 
 interface ReferralShop { id: string; name: string; is_default: boolean }
+interface EquipMake { id: string; name: string }
 
 export default function SettingsPage() {
   const [laborRate, setLaborRate] = useState('80')
@@ -14,6 +15,11 @@ export default function SettingsPage() {
   const [shopSaving, setShopSaving] = useState(false)
   const [shopError, setShopError] = useState('')
 
+  const [makes, setMakes] = useState<EquipMake[]>([])
+  const [newMakeName, setNewMakeName] = useState('')
+  const [makeSaving, setMakeSaving] = useState(false)
+  const [makeError, setMakeError] = useState('')
+
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.json())
@@ -24,12 +30,19 @@ export default function SettingsPage() {
       })
       .catch(() => setLoading(false))
     loadShops()
+    loadMakes()
   }, [])
 
   function loadShops() {
     fetch('/api/settings/referral-shops')
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setShops(data) })
+  }
+
+  function loadMakes() {
+    fetch('/api/settings/equipment-makes')
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setMakes(data) })
   }
 
   async function handleSave() {
@@ -72,6 +85,29 @@ export default function SettingsPage() {
       body: JSON.stringify({ is_default: true }),
     })
     loadShops()
+  }
+
+  async function addMake() {
+    if (!newMakeName.trim()) return
+    setMakeSaving(true)
+    setMakeError('')
+    const res = await fetch('/api/settings/equipment-makes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newMakeName.trim() }),
+    })
+    const data = await res.json()
+    if (data.error) { setMakeError(data.error); setMakeSaving(false); return }
+    setNewMakeName('')
+    setMakeSaving(false)
+    loadMakes()
+  }
+
+  async function deleteMake(id: string) {
+    const res = await fetch('/api/settings/equipment-makes/' + id, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.error) { setMakeError(data.error); return }
+    loadMakes()
   }
 
   if (loading) return <div className="p-8 text-gray-500">Loading settings...</div>
@@ -147,6 +183,44 @@ export default function SettingsPage() {
             placeholder="New shop name..."
             className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
           <button onClick={addShop} disabled={shopSaving || !newShopName.trim()}
+            className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600 disabled:opacity-40">
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Equipment Makes */}
+      <div className="bg-white rounded-xl shadow p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold text-gray-700">Equipment Makes</h2>
+          <p className="text-xs text-gray-400 mt-1">These populate the Make dropdown when adding equipment to a work order or customer record. Keeps brand names consistent across the system.</p>
+        </div>
+
+        {makeError && (
+          <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded">{makeError}</p>
+        )}
+
+        <div className="space-y-2">
+          {makes.length === 0 && (
+            <p className="text-sm text-gray-400 italic">No makes added yet.</p>
+          )}
+          {makes.map(make => (
+            <div key={make.id} className="flex items-center justify-between py-2 px-3 rounded-lg border bg-gray-50">
+              <span className="text-sm text-gray-800">{make.name}</span>
+              <button onClick={() => deleteMake(make.id)}
+                className="text-xs text-red-400 hover:text-red-600 hover:underline">
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <input type="text" value={newMakeName} onChange={e => setNewMakeName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addMake()}
+            placeholder="e.g. STIHL, Echo, Husqvarna..."
+            className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+          <button onClick={addMake} disabled={makeSaving || !newMakeName.trim()}
             className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600 disabled:opacity-40">
             Add
           </button>
