@@ -1,9 +1,13 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import Nav from "@/components/nav"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
+
+export const viewport: Viewport = {
+  themeColor: "#f97316",
+}
 
 export const metadata: Metadata = {
   title: "WW Small Engine",
@@ -26,13 +30,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <head>
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="WW Engine" />
-        <meta name="theme-color" content="#f97316" />
-      </head>
       <body className={inter.variable + " font-sans bg-slate-50 min-h-screen"}>
         <Nav />
         <main className="pb-24 md:pb-8">
