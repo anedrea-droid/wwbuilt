@@ -96,8 +96,28 @@ function NewWorkOrderForm() {
     return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6)
   }
 
+  function digitsOnly(raw: string): string {
+    return (raw || '').replace(/\D/g, '')
+  }
+
+  const newCustPhoneDigits = digitsOnly(newCustPhone)
+  const newCustDuplicateMatch = newCustPhoneDigits.length >= 7
+    ? customers.find(c => digitsOnly(c.phone) === newCustPhoneDigits)
+    : undefined
+
+  function useDuplicateCustomer(c: Customer) {
+    setSelectedCustomerId(c.id)
+    setCustSearch(c.name + (c.phone ? ' - ' + c.phone : ''))
+    setShowSuggestions(false)
+    setAddingCustomer(false)
+    setNewCustName(''); setNewCustPhone(''); setNewCustEmail(''); setNewCustSource('own'); setNewCustShop('')
+  }
+
   async function handleSaveCustomer() {
     if (!newCustName.trim()) return
+    if (newCustDuplicateMatch && !confirm('This phone number is already used by ' + newCustDuplicateMatch.name + '. Add as a new, separate customer anyway?')) {
+      return
+    }
     const res = await fetch('/api/customers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -127,7 +147,10 @@ function NewWorkOrderForm() {
   }
 
   async function handleSubmit() {
-    if (!selectedCustomerId || !selectedEquipmentId || !complaint.trim()) return
+    if (!selectedCustomerId) { setSubmitError('Please select a customer.'); return }
+    if (!selectedEquipmentId) { setSubmitError('Please select equipment.'); return }
+    if (!complaint.trim()) { setSubmitError('Please describe the problem before creating the work order.'); return }
+    setSubmitError('')
     setSaving(true)
     try {
       const res = await fetch('/api/work-orders', {
@@ -142,7 +165,7 @@ function NewWorkOrderForm() {
     }
   }
 
-  const canSubmit = selectedCustomerId && selectedEquipmentId && complaint.trim()
+  const [submitError, setSubmitError] = useState('')
 
   return (
     <div className="max-w-2xl mx-auto px-3 pt-4">
@@ -223,6 +246,17 @@ function NewWorkOrderForm() {
                     <Input value={newCustPhone} onChange={e => setNewCustPhone(formatPhone(e.target.value))} placeholder="(361) 555-0000" type="tel" />
                   </div>
                 </div>
+                {newCustDuplicateMatch && (
+                  <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                    <p className="text-xs text-yellow-800">
+                      Possible match: <span className="font-semibold">{newCustDuplicateMatch.name}</span> already has this phone number
+                    </p>
+                    <button type="button" onClick={() => useDuplicateCustomer(newCustDuplicateMatch)}
+                      className="text-xs font-semibold text-orange-600 hover:underline whitespace-nowrap">
+                      Use this customer
+                    </button>
+                  </div>
+                )}
                 <div>
                   <Label className="text-xs">Email</Label>
                   <Input value={newCustEmail} onChange={e => setNewCustEmail(e.target.value)} placeholder="Optional" type="email" />
@@ -386,7 +420,7 @@ function NewWorkOrderForm() {
                   onChange={e => setComplaint(e.target.value)}
                   placeholder="What is the customer saying is wrong with it?"
                   rows={3}
-                  className="mt-1"
+                  className="mt-1 uppercase placeholder:normal-case"
                 />
               </div>
 
@@ -397,7 +431,7 @@ function NewWorkOrderForm() {
                   onChange={e => setNotes(e.target.value)}
                   placeholder="Any other notes..."
                   rows={2}
-                  className="mt-1"
+                  className="mt-1 uppercase placeholder:normal-case"
                 />
               </div>
             </CardContent>
@@ -406,14 +440,19 @@ function NewWorkOrderForm() {
 
         {/* Submit */}
         {selectedEquipmentId && (
-          <Button
-            size="lg"
-            className="w-full bg-orange-600 hover:bg-orange-700 text-base font-semibold h-12"
-            disabled={!canSubmit || saving}
-            onClick={handleSubmit}
-          >
-            {saving ? 'Creating...' : 'Create Work Order'}
-          </Button>
+          <div>
+            {submitError && (
+              <p className="text-sm text-red-600 font-medium mb-2 text-center">{submitError}</p>
+            )}
+            <Button
+              size="lg"
+              className="w-full bg-orange-600 hover:bg-orange-700 text-base font-semibold h-12"
+              disabled={saving}
+              onClick={handleSubmit}
+            >
+              {saving ? 'Creating...' : 'Create Work Order'}
+            </Button>
+          </div>
         )}
       </div>
     </div>
