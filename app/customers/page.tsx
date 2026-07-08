@@ -40,13 +40,10 @@ export default function CustomersPage() {
       body: JSON.stringify(form),
     })
     const newC = await res.json()
-    setCustomers(c => [...c, newC])
-    const def = referralShops.find(s => s.is_default) || referralShops.find(s => s.name === 'Seguin Small Engine') || referralShops[0]
-    setForm({ name: '', phone: '', email: '', source: 'own', referralShop: def ? def.name : '', notes: '' })
-    setShowAdd(false)
+    router.push('/customers/' + newC.id)
   }
 
-  if (loading) return <div className="p-8 text-gray-500">Loading…</div>
+  if (loading) return <div className="p-8 text-gray-500">Loadingâ€¦</div>
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
@@ -121,7 +118,7 @@ export default function CustomersPage() {
       ) : (
         <div className="space-y-2">
           {customers.map(c => (
-            <Link key={c.id} href={`/customers/${c.id}`}
+            <Link key={c.id} href={'/customers/' + c.id}
               className="block bg-white rounded-xl shadow px-4 py-3 hover:bg-orange-50 transition">
               <div className="flex items-center justify-between">
                 <div>
