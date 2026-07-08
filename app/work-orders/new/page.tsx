@@ -1,29 +1,81 @@
-'use client'
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+"use client"
 
-export default function CustomersPage() {
-  const [customers, setCustomers] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ name: '', phone: '', email: '', source: 'own', referralShop: '', notes: '' })
-  const [referralShops, setReferralShops] = useState<{id:string;name:string;is_default:boolean}[]>([])
+import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { ArrowLeft, Plus, User, Wrench } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
+import type { Customer, Equipment } from "@/types"
+
+const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Concrete Saw','Other']
+
+export default function NewWorkOrder() {
   const router = useRouter()
+  const [saving, setSaving] = useState(false)
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [equipment, setEquipment] = useState<Equipment[]>([])
+
+  // Form state
+  const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [custSearch, setCustSearch] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState('')
+  const [technician, setTechnician] = useState<'Wade' | 'Wayne'>('Wade')
+  const [complaint, setComplaint] = useState('')
+  const [dateIn, setDateIn] = useState(new Date().toISOString().split('T')[0])
+  const [notes, setNotes] = useState('')
+
+  // New customer inline form
+  const [addingCustomer, setAddingCustomer] = useState(false)
+  const [newCustName, setNewCustName] = useState('')
+  const [newCustPhone, setNewCustPhone] = useState('')
+  const [newCustEmail, setNewCustEmail] = useState('')
+  const [newCustSource, setNewCustSource] = useState<'own' | 'referral'>('own')
+  const [newCustShop, setNewCustShop] = useState('')
+  const [referralShops, setReferralShops] = useState<{id:string;name:string;is_default:boolean}[]>([])
+
+  // New equipment inline form
+  const [addingEquip, setAddingEquip] = useState(false)
+  const [newEquipType, setNewEquipType] = useState('Mower')
+  const [newEquipTypeOther, setNewEquipTypeOther] = useState('')
+  const [newEquipMake, setNewEquipMake] = useState('')
+  const [newEquipMakeOther, setNewEquipMakeOther] = useState('')
+  const [newEquipModel, setNewEquipModel] = useState('')
+  const [newEquipSerial, setNewEquipSerial] = useState('')
+  const [equipMakes, setEquipMakes] = useState<{id:string;name:string}[]>([])
 
   useEffect(() => {
-    fetch('/api/customers').then(r => r.json()).then(data => { setCustomers(data); setLoading(false) })
+    fetch('/api/customers').then(r => r.json()).then(setCustomers)
+    fetch('/api/settings/equipment-makes').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setEquipMakes(data)
+    })
     fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
       if (Array.isArray(data) && data.length > 0) {
         setReferralShops(data)
         const def = data.find((s: {is_default:boolean;name:string}) => s.is_default)
           || data.find((s: {name:string}) => s.name === 'Seguin Small Engine')
           || data[0]
-        if (def) setForm(f => ({ ...f, referralShop: def.name }))
+        if (def) setNewCustShop(def.name)
       }
     })
   }, [])
 
+  const loadEquipment = useCallback((custId: string) => {
+    if (!custId) { setEquipment([]); return }
+    fetch('/api/equipment?customerId=' + custId).then(r => r.json()).then(setEquipment)
+  }, [])
+
+  useEffect(() => {
+    loadEquipment(selectedCustomerId)
+    setSelectedEquipmentId('')
+    setAddingEquip(false)
+  }, [selectedCustomerId, loadEquipment])
 
   function formatPhone(raw: string): string {
     const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -32,112 +84,326 @@ export default function CustomersPage() {
     return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6)
   }
 
-  async function addCustomer() {
-    if (!form.name.trim()) return alert('Name is required')
+  async function handleSaveCustomer() {
+    if (!newCustName.trim()) return
     const res = await fetch('/api/customers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ name: newCustName, phone: newCustPhone, email: newCustEmail, source: newCustSource, referralShop: newCustShop })
     })
-    const newC = await res.json()
-    setCustomers(c => [...c, newC])
-    const def = referralShops.find(s => s.is_default) || referralShops.find(s => s.name === 'Seguin Small Engine') || referralShops[0]
-    setForm({ name: '', phone: '', email: '', source: 'own', referralShop: def ? def.name : '', notes: '' })
-    setShowAdd(false)
+    const c = await res.json()
+    setCustomers(prev => [...prev, c].sort((a,b) => a.name.localeCompare(b.name)))
+    setSelectedCustomerId(c.id)
+    setCustSearch(c.name + (c.phone ? ' - ' + c.phone : ''))
+    setShowSuggestions(false)
+    setAddingCustomer(false)
+    setNewCustName(''); setNewCustPhone(''); setNewCustEmail(''); setNewCustSource('own'); setNewCustShop('')
   }
 
-  if (loading) return <div className="p-8 text-gray-500">Loading…</div>
+  async function handleSaveEquipment() {
+    if (!newEquipMake.trim() || !selectedCustomerId) return
+    const res = await fetch('/api/equipment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId: selectedCustomerId, type: newEquipType === 'Other' ? (newEquipTypeOther.trim() || 'Other') : newEquipType, make: newEquipMake === 'Other' ? (newEquipMakeOther.trim() || 'Other') : newEquipMake, model: newEquipModel, serialNumber: newEquipSerial })
+    })
+    const e = await res.json()
+    setEquipment(prev => [...prev, e])
+    setSelectedEquipmentId(e.id)
+    setAddingEquip(false)
+    setNewEquipMake(''); setNewEquipMakeOther(''); setNewEquipModel(''); setNewEquipSerial(''); setNewEquipType('Mower')
+  }
+
+  async function handleSubmit() {
+    if (!selectedCustomerId || !selectedEquipmentId || !complaint.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/work-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: selectedCustomerId, equipmentId: selectedEquipmentId, technician, complaint, dateIn, notes })
+      })
+      const wo = await res.json()
+      router.push('/work-orders/' + wo.id)
+    } catch {
+      setSaving(false)
+    }
+  }
+
+  const canSubmit = selectedCustomerId && selectedEquipmentId && complaint.trim()
 
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Customers</h1>
-        <button onClick={() => setShowAdd(v => !v)}
-          className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600">
-          + Add Customer
-        </button>
+    <div className="max-w-2xl mx-auto px-3 pt-4">
+      <div className="flex items-center gap-2 mb-4">
+        <Link href="/" className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+        <h1 className="text-xl font-bold text-slate-800">New Work Order</h1>
       </div>
 
-      {showAdd && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
-          <p className="font-semibold text-gray-700">New Customer</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500">Name *</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full border rounded px-2 py-1 text-sm" placeholder="Full name" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Phone</label>
-              <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
-                className="w-full border rounded px-2 py-1 text-sm" placeholder="555-1234" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Email</label>
-              <input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                className="w-full border rounded px-2 py-1 text-sm" placeholder="optional" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Customer Type</label>
-              <select value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
-                className="w-full border rounded px-2 py-1 text-sm">
-                <option value="own">Our Customer</option>
-                <option value="referral">Referral from another shop</option>
-              </select>
-            </div>
-            {form.source === 'referral' && (
-              <div className="col-span-2">
-                <label className="text-xs text-gray-500">Referring Shop Name</label>
-                <select value={form.referralShop} onChange={e => setForm(f => ({ ...f, referralShop: e.target.value }))}
-                  className="w-full border rounded px-2 py-1 text-sm">
-                  <option value="">Select shop...</option>
-                  {referralShops.map(s => (
-                    <option key={s.id} value={s.name}>{s.name}</option>
-                  ))}
-                </select>
+      <div className="space-y-4">
+        {/* CUSTOMER */}
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-base flex items-center gap-2">
+              <User className="h-4 w-4 text-orange-500" />
+              Customer
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            {!addingCustomer ? (
+              <>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Type customer name..."
+                    value={custSearch}
+                    onChange={e => {
+                      setCustSearch(e.target.value)
+                      setShowSuggestions(true)
+                      if (!e.target.value) setSelectedCustomerId('')
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                  {selectedCustomerId && !showSuggestions && (
+                    <span className="absolute right-3 top-2.5 text-xs text-green-600 font-medium">Selected</span>
+                  )}
+                  {showSuggestions && custSearch.length > 0 && (
+                    <div className="absolute z-10 w-full bg-white border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                      {customers
+                        .filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase()))
+                        .slice(0, 5)
+                        .map(c => (
+                          <button key={c.id} type="button"
+                            onMouseDown={() => {
+                              setSelectedCustomerId(c.id)
+                              setCustSearch(c.name + (c.phone ? ' - ' + c.phone : ''))
+                              setShowSuggestions(false)
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b last:border-0">
+                            <span className="font-medium">{c.name}</span>
+                            {c.phone && <span className="text-gray-400 ml-2 text-xs">{c.phone}</span>}
+                            {c.source === 'referral' && <span className="text-blue-500 ml-2 text-xs">Referral</span>}
+                          </button>
+                        ))}
+                      {customers.filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-400">No customers found</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setAddingCustomer(true)} className="w-full">
+                  <Plus className="h-4 w-4 mr-1" /> Add New Customer
+                </Button>
+              </>
+            ) : (
+              <div className="space-y-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <p className="text-sm font-semibold text-orange-700">New Customer</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Name *</Label>
+                    <Input value={newCustName} onChange={e => setNewCustName(e.target.value)} placeholder="Full name" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Phone</Label>
+                    <Input value={newCustPhone} onChange={e => setNewCustPhone(formatPhone(e.target.value))} placeholder="(361) 555-0000" type="tel" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Email</Label>
+                  <Input value={newCustEmail} onChange={e => setNewCustEmail(e.target.value)} placeholder="Optional" type="email" />
+                </div>
+                <div>
+                  <Label className="text-xs">Customer Source</Label>
+                  <div className="flex gap-2 mt-1">
+                    {(['own', 'referral'] as const).map(s => (
+                      <button key={s} onClick={() => setNewCustSource(s)}
+                        className={cn("flex-1 py-1.5 rounded text-sm font-medium border transition-colors",
+                          newCustSource === s ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        )}>
+                        {s === 'own' ? 'Our Customer' : 'Referral'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {newCustSource === 'referral' && (
+                  <div>
+                    <Label className="text-xs">Referring Shop</Label>
+                    <select value={newCustShop} onChange={e => setNewCustShop(e.target.value)}
+                      className="w-full border rounded-md px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                      <option value="">Select shop...</option>
+                      {referralShops.map(s => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleSaveCustomer} disabled={!newCustName.trim()} className="flex-1 bg-orange-600 hover:bg-orange-700">
+                    Save Customer
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setAddingCustomer(false)} className="flex-1">
+                    Cancel
+                  </Button>
+                </div>
               </div>
             )}
-            <div className="col-span-2">
-              <label className="text-xs text-gray-500">Notes</label>
-              <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                className="w-full border rounded px-2 py-1 text-sm" placeholder="optional" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={addCustomer}
-              className="bg-orange-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-orange-600">
-              Save Customer
-            </button>
-            <button onClick={() => setShowAdd(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          </div>
-        </div>
-      )}
+          </CardContent>
+        </Card>
 
-      {customers.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-lg">No customers yet</p>
-          <p className="text-sm mt-1">Click + Add Customer to get started</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {customers.map(c => (
-            <Link key={c.id} href={`/customers/${c.id}`}
-              className="block bg-white rounded-xl shadow px-4 py-3 hover:bg-orange-50 transition">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold">{c.name}</p>
-                  <p className="text-sm text-gray-500">{c.phone || 'No phone'}</p>
+        {/* EQUIPMENT */}
+        {(selectedCustomerId || addingCustomer) && (
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-orange-500" />
+                Equipment
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-3">
+              {!addingEquip ? (
+                <>
+                  {equipment.length > 0 ? (
+                    <Select value={selectedEquipmentId} onValueChange={setSelectedEquipmentId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select equipment..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {equipment.map(e => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {e.type} - {e.make} {e.model}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-slate-500 italic">No equipment on file for this customer.</p>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setAddingEquip(true)} className="w-full" disabled={!selectedCustomerId}>
+                    <Plus className="h-4 w-4 mr-1" /> Add New Equipment
+                  </Button>
+                </>
+              ) : (
+                <div className="space-y-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <p className="text-sm font-semibold text-orange-700">New Equipment</p>
+                  <div>
+                    <Label className="text-xs">Type</Label>
+                    <Select value={newEquipType} onValueChange={v => { setNewEquipType(v); if (v !== 'Other') setNewEquipTypeOther('') }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {EQUIPMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {newEquipType === 'Other' && (
+                      <Input value={newEquipTypeOther} onChange={e => setNewEquipTypeOther(e.target.value)}
+                        placeholder="Describe equipment type" className="mt-1" />
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Make *</Label>
+                      <select
+                        value={newEquipMake}
+                        onChange={e => { setNewEquipMake(e.target.value); if (e.target.value !== 'Other') setNewEquipMakeOther('') }}
+                        className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                        <option value="">Select make...</option>
+                        {equipMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                        <option value="Other">Other (type below)</option>
+                      </select>
+                      {newEquipMake === 'Other' && (
+                        <Input className="mt-1" value={newEquipMakeOther} onChange={e => setNewEquipMakeOther(e.target.value)} placeholder="Type make name..." />
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-xs">Model</Label>
+                      <Input value={newEquipModel} onChange={e => setNewEquipModel(e.target.value)} placeholder="YTH24V48..." />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Serial Number</Label>
+                    <Input value={newEquipSerial} onChange={e => setNewEquipSerial(e.target.value)} placeholder="Optional" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleSaveEquipment} disabled={!newEquipMake || (newEquipMake === 'Other' && !newEquipMakeOther.trim())} className="flex-1 bg-orange-600 hover:bg-orange-700">
+                      Save Equipment
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setAddingEquip(false)} className="flex-1">Cancel</Button>
+                  </div>
                 </div>
-                {c.source === 'referral' && (
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                    Referral
-                  </span>
-                )}
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* JOB DETAILS */}
+        {selectedEquipmentId && (
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-base">Job Details</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-3">
+              <div>
+                <Label className="text-xs font-semibold">Assigned To *</Label>
+                <div className="flex gap-2 mt-1">
+                  {(['Wade', 'Wayne'] as const).map(t => (
+                    <button key={t} onClick={() => setTechnician(t)}
+                      className={cn("flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors",
+                        technician === t
+                          ? t === 'Wade' ? "bg-orange-600 text-white border-orange-600"
+                            : t === 'Wayne' ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      )}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </Link>
-          ))}
-        </div>
-      )}
+
+              <div>
+                <Label className="text-xs font-semibold">Date Brought In</Label>
+                <Input type="date" value={dateIn} onChange={e => setDateIn(e.target.value)} className="mt-1" />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold">Problem / Complaint *</Label>
+                <Textarea
+                  value={complaint}
+                  onChange={e => setComplaint(e.target.value)}
+                  placeholder="What is the customer saying is wrong with it?"
+                  rows={3}
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold">Notes (optional)</Label>
+                <Textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="Any other notes..."
+                  rows={2}
+                  className="mt-1"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Submit */}
+        {selectedEquipmentId && (
+          <Button
+            size="lg"
+            className="w-full bg-orange-600 hover:bg-orange-700 text-base font-semibold h-12"
+            disabled={!canSubmit || saving}
+            onClick={handleSubmit}
+          >
+            {saving ? 'Creating...' : 'Create Work Order'}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
