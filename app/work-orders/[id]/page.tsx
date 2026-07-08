@@ -405,6 +405,14 @@ export default function WorkOrderDetail() {
         {textarea('Work Done', 'workDone')}
         {field('Labor Hours', 'laborHours', 'number')}
         {textarea('Notes', 'notes')}
+        {editing && (
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <button onClick={() => { setEditing(false); setForm(wo) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+            <button onClick={saveWorkOrder} disabled={saving} className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow p-4">
@@ -708,10 +716,16 @@ export default function WorkOrderDetail() {
           )}
         </div>
         {editing && (
-          <button onClick={saveWorkOrder} disabled={saving}
-            className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 font-medium">
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => { setEditing(false); setForm(wo) }}
+              className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-lg hover:bg-gray-200 font-medium">
+              Cancel
+            </button>
+            <button onClick={saveWorkOrder} disabled={saving}
+              className="flex-[2] bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 font-medium">
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -720,17 +734,29 @@ export default function WorkOrderDetail() {
       {/* Referral Shop Tracking - only shown for referral customers */}
       {customer?.source === 'referral' && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl shadow p-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-blue-800">Referral Shop Tracking</h2>
               <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{customer?.referralShop || 'Referral Shop'}</span>
             </div>
-            {wo.referralDropoffDate && (
-              <button onClick={printReceipt}
-                className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
-                Print Shop Receipt
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {wo.referralDropoffDate && (
+                <button onClick={printReceipt}
+                  className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
+                  Print Shop Receipt
+                </button>
+              )}
+              {editing ? (
+                <div className="flex gap-2">
+                  <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                  <button onClick={saveWorkOrder} disabled={saving} className="text-xs bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600">
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setEditing(true)} className="text-xs text-orange-500 hover:underline">Edit</button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -826,6 +852,15 @@ export default function WorkOrderDetail() {
                   </label>
                 </div>
               </div>
+            </div>
+          )}
+
+          {editing && (
+            <div className="flex justify-end gap-2 pt-2 border-t border-blue-200">
+              <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={saveWorkOrder} disabled={saving} className="text-xs bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
             </div>
           )}
         </div>
