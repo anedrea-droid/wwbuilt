@@ -430,7 +430,7 @@ export default function CustomerDetail() {
             })
           )}
           <div className="pt-1">
-            <Link href="/work-orders/new">
+            <Link href={'/work-orders/new?customerId=' + id}>
               <Button variant="outline" size="sm" className="w-full">
                 <Plus className="h-4 w-4 mr-1" /> New Job for this Customer
               </Button>
