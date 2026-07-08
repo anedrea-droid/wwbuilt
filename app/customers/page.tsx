@@ -32,8 +32,20 @@ export default function CustomersPage() {
     return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6)
   }
 
+  function digitsOnly(raw: string): string {
+    return (raw || '').replace(/\D/g, '')
+  }
+
+  const phoneDigits = digitsOnly(form.phone)
+  const duplicateMatch = phoneDigits.length >= 7
+    ? customers.find((c: any) => digitsOnly(c.phone) === phoneDigits)
+    : null
+
   async function addCustomer() {
     if (!form.name.trim()) return alert('Name is required')
+    if (duplicateMatch && !confirm('This phone number is already used by ' + duplicateMatch.name + '. Add as a new, separate customer anyway?')) {
+      return
+    }
     const res = await fetch('/api/customers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -69,6 +81,17 @@ export default function CustomersPage() {
               <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
                 className="w-full border rounded px-2 py-1 text-sm" placeholder="555-1234" />
             </div>
+            {duplicateMatch && (
+              <div className="col-span-2 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                <p className="text-xs text-yellow-800">
+                  Possible match: <span className="font-semibold">{duplicateMatch.name}</span> already has this phone number
+                </p>
+                <button type="button" onClick={() => router.push('/customers/' + duplicateMatch.id)}
+                  className="text-xs font-semibold text-orange-600 hover:underline whitespace-nowrap">
+                  Use this customer
+                </button>
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-500">Email</label>
               <input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
