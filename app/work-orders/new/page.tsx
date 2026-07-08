@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Plus, User, Wrench } from "lucide-react"
@@ -15,7 +15,7 @@ import type { Customer, Equipment } from "@/types"
 
 const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimmer','Line Trimmer','Chainsaw','Blower','Tiller','Generator','Pressure Washer','Concrete Saw','Other']
 
-export default function NewWorkOrder() {
+function NewWorkOrderForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const prefillCustomerId = searchParams.get('customerId')
@@ -417,5 +417,12 @@ export default function NewWorkOrder() {
         )}
       </div>
     </div>
+  )
+}
+export default function NewWorkOrder() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-400">Loading...</div>}>
+      <NewWorkOrderForm />
+    </Suspense>
   )
 }
