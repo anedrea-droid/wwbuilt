@@ -8,10 +8,20 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({ name: '', phone: '', email: '', source: 'own', referralShop: '', notes: '' })
+  const [referralShops, setReferralShops] = useState<{id:string;name:string;is_default:boolean}[]>([])
   const router = useRouter()
 
   useEffect(() => {
     fetch('/api/customers').then(r => r.json()).then(data => { setCustomers(data); setLoading(false) })
+    fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
+      if (Array.isArray(data) && data.length > 0) {
+        setReferralShops(data)
+        const def = data.find((s: {is_default:boolean;name:string}) => s.is_default)
+          || data.find((s: {name:string}) => s.name === 'Seguin Small Engine')
+          || data[0]
+        if (def) setForm(f => ({ ...f, referralShop: def.name }))
+      }
+    })
   }, [])
 
 
@@ -31,11 +41,12 @@ export default function CustomersPage() {
     })
     const newC = await res.json()
     setCustomers(c => [...c, newC])
-    setForm({ name: '', phone: '', email: '', source: 'own', referralShop: '', notes: '' })
+    const def = referralShops.find(s => s.is_default) || referralShops.find(s => s.name === 'Seguin Small Engine') || referralShops[0]
+    setForm({ name: '', phone: '', email: '', source: 'own', referralShop: def ? def.name : '', notes: '' })
     setShowAdd(false)
   }
 
-  if (loading) return <div className="p-8 text-gray-500">Loadingâ€¦</div>
+  if (loading) return <div className="p-8 text-gray-500">Loading…</div>
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
@@ -77,8 +88,13 @@ export default function CustomersPage() {
             {form.source === 'referral' && (
               <div className="col-span-2">
                 <label className="text-xs text-gray-500">Referring Shop Name</label>
-                <input value={form.referralShop} onChange={e => setForm(f => ({ ...f, referralShop: e.target.value }))}
-                  className="w-full border rounded px-2 py-1 text-sm" placeholder="Shop name" />
+                <select value={form.referralShop} onChange={e => setForm(f => ({ ...f, referralShop: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm">
+                  <option value="">Select shop...</option>
+                  {referralShops.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
               </div>
             )}
             <div className="col-span-2">
