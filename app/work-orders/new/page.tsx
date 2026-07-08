@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Plus, User, Wrench } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,8 @@ const EQUIPMENT_TYPES = ['Mower','Riding Mower','Zero-Turn','Weed Eater','Trimme
 
 export default function NewWorkOrder() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const prefillCustomerId = searchParams.get('customerId')
   const [saving, setSaving] = useState(false)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [equipment, setEquipment] = useState<Equipment[]>([])
@@ -51,7 +53,17 @@ export default function NewWorkOrder() {
   const [equipMakes, setEquipMakes] = useState<{id:string;name:string}[]>([])
 
   useEffect(() => {
-    fetch('/api/customers').then(r => r.json()).then(setCustomers)
+    fetch('/api/customers').then(r => r.json()).then((data: Customer[]) => {
+      setCustomers(data)
+      if (prefillCustomerId) {
+        const match = data.find(c => c.id === prefillCustomerId)
+        if (match) {
+          setSelectedCustomerId(match.id)
+          setCustSearch(match.name)
+          setShowSuggestions(false)
+        }
+      }
+    })
     fetch('/api/settings/equipment-makes').then(r => r.json()).then(data => {
       if (Array.isArray(data)) setEquipMakes(data)
     })
