@@ -204,8 +204,6 @@ export default function ReportsPage() {
             {payouts.length === 0 ? <Empty /> : (() => {
               const inHouse = payouts.filter(r => r.customer_source !== 'referral')
               const referral = payouts.filter(r => r.customer_source === 'referral')
-              let ihWade = 0, ihWayne = 0, ihRev = 0
-              let refWade = 0, refWayne = 0, refRev = 0, refCutTotal = 0
 
               const calcRow = (row: Record<string, unknown>, isRef: boolean) => {
                 const partsCharged = Number(row.parts_charged) || 0
@@ -224,7 +222,20 @@ export default function ReportsPage() {
                 return { invoice, partsCharged, afterParts, refCut, net, wade, wayne, isEst }
               }
 
-              const tbl = (rows: Record<string, unknown>[], isRef: boolean) => (
+              const sumRows = (rows: Record<string, unknown>[], isRef: boolean) => {
+                let revenue = 0, parts = 0, shopCut = 0, net = 0, wade = 0, wayne = 0
+                rows.forEach(row => {
+                  const c = calcRow(row, isRef)
+                  revenue += c.invoice; parts += c.partsCharged; shopCut += c.refCut
+                  net += c.net; wade += c.wade; wayne += c.wayne
+                })
+                return { revenue, parts, shopCut, net, wade, wayne }
+              }
+
+              const ihTotals = sumRows(inHouse, false)
+              const refTotals = sumRows(referral, true)
+
+              const tbl = (rows: Record<string, unknown>[], isRef: boolean, totals: { revenue: number; parts: number; shopCut: number; net: number; wade: number; wayne: number }) => (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -244,8 +255,6 @@ export default function ReportsPage() {
                     <tbody>
                       {rows.map(row => {
                         const c = calcRow(row, isRef)
-                        if (isRef) { refRev += c.invoice; refCutTotal += c.refCut; refWade += c.wade; refWayne += c.wayne }
-                        else { ihRev += c.invoice; ihWade += c.wade; ihWayne += c.wayne }
                         return (
                           <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                             <td className="py-1.5 pr-3">
@@ -254,7 +263,7 @@ export default function ReportsPage() {
                               </Link>
                             </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
+                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.effective_date ?? row.date_complete)}</td>
                             {isRef && <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.referral_shop || '-')}</td>}
                             <td className="py-1.5 pr-3 text-right">
                               {fmt(c.invoice)}{c.isEst && <span className="text-gray-400 text-xs ml-1">*</span>}
@@ -268,6 +277,17 @@ export default function ReportsPage() {
                         )
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold text-sm">
+                        <td className="pt-2 text-gray-500" colSpan={isRef ? 3 : 2}>Subtotal</td>
+                        <td className="pt-2 text-right">{fmt(totals.revenue)}</td>
+                        <td className="pt-2 text-right text-gray-600">{totals.parts > 0 ? fmt(totals.parts) : '-'}</td>
+                        {isRef && <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>}
+                        <td className="pt-2 text-right">{fmt(totals.net)}</td>
+                        <td className="pt-2 text-right text-orange-600">{fmt(totals.wade)}</td>
+                        <td className="pt-2 text-right text-blue-600">{fmt(totals.wayne)}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )
@@ -277,38 +297,31 @@ export default function ReportsPage() {
                   {inHouse.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">In-House Jobs</h3>
-                      {tbl(inHouse, false)}
-                      <div className="flex justify-end gap-8 mt-2 pt-2 border-t text-sm">
-                        <span className="text-gray-500">Subtotal</span>
-                        <span className="text-orange-600 font-semibold w-20 text-right">Wade {fmt(ihWade)}</span>
-                        <span className="text-blue-600 font-semibold w-20 text-right">Wayne {fmt(ihWayne)}</span>
-                      </div>
+                      {tbl(inHouse, false, ihTotals)}
                     </div>
                   )}
                   {referral.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Referral Jobs</h3>
-                      {tbl(referral, true)}
-                      <div className="flex justify-end gap-8 mt-2 pt-2 border-t text-sm">
-                        <span className="text-gray-500">Subtotal</span>
-                        <span className="text-gray-500 font-semibold w-28 text-right">Shop 20% {fmt(refCutTotal)}</span>
-                        <span className="text-orange-600 font-semibold w-20 text-right">Wade {fmt(refWade)}</span>
-                        <span className="text-blue-600 font-semibold w-20 text-right">Wayne {fmt(refWayne)}</span>
-                      </div>
+                      {tbl(referral, true, refTotals)}
                     </div>
                   )}
-                  <div className="grid grid-cols-3 gap-3 mt-2 pt-3 border-t-2">
+                  <div className="grid grid-cols-4 gap-3 mt-2 pt-3 border-t-2">
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-gray-500 mb-1">Total Revenue</div>
-                      <div className="font-bold text-gray-800">{fmt(ihRev + refRev)}</div>
+                      <div className="font-bold text-gray-800">{fmt(ihTotals.revenue + refTotals.revenue)}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500 mb-1">Net Split Total</div>
+                      <div className="font-bold text-gray-800">{fmt(ihTotals.net + refTotals.net)}</div>
                     </div>
                     <div className="bg-orange-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-orange-600 mb-1">Wade Total</div>
-                      <div className="font-bold text-orange-600">{fmt(ihWade + refWade)}</div>
+                      <div className="font-bold text-orange-600">{fmt(ihTotals.wade + refTotals.wade)}</div>
                     </div>
                     <div className="bg-blue-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-blue-600 mb-1">Wayne Total</div>
-                      <div className="font-bold text-blue-600">{fmt(ihWayne + refWayne)}</div>
+                      <div className="font-bold text-blue-600">{fmt(ihTotals.wayne + refTotals.wayne)}</div>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400">* Revenue estimated from labor + parts (Shop Payment or Invoice Amount not yet entered)</p>
