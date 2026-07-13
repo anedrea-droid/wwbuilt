@@ -279,7 +279,7 @@ export default function ReportsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 font-semibold text-sm">
-                        <td className="pt-2 text-gray-500" colSpan={isRef ? 3 : 2}>Subtotal</td>
+                        <td className="pt-2 text-gray-500" colSpan={isRef ? 4 : 3}>Subtotal</td>
                         <td className="pt-2 text-right">{fmt(totals.revenue)}</td>
                         <td className="pt-2 text-right text-gray-600">{totals.parts > 0 ? fmt(totals.parts) : '-'}</td>
                         {isRef && <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>}
