@@ -11,7 +11,9 @@ export async function GET(req: Request) {
   try {
     if (type === 'payouts') {
       const { rows } = await pool.query(
-        'SELECT wo.id, wo.order_number, wo.date_complete, wo.amount_charged, wo.labor_hours, wo.labor_rate, ' +
+        'SELECT wo.id, wo.order_number, wo.date_complete, wo.referral_dropoff_date, wo.date_in, ' +
+        'COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date as effective_date, ' +
+        'wo.amount_charged, wo.labor_hours, wo.labor_rate, ' +
         'wo.shop_payment_amount, ' +
         'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
@@ -20,10 +22,11 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE wo.date_complete >= $1 AND wo.date_complete <= $2 ' +
+        'WHERE COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date >= $1 ' +
+        'AND COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date <= $2 ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'GROUP BY wo.id, c.name, c.source, c.referral_shop ' +
-        'ORDER BY wo.date_complete DESC',
+        'ORDER BY effective_date DESC',
         [from, to]
       )
       return NextResponse.json(rows)
@@ -44,6 +47,7 @@ export async function GET(req: Request) {
         'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND (' +
         '  (' +
         '    (c.source IS NULL OR c.source != \'referral\') ' +
+        '    AND wo.status IN (\'complete\', \'picked-up\') ' +
         '    AND wo.amount_charged > 0 ' +
         '    AND (wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
         '  ) OR (' +
@@ -60,7 +64,7 @@ export async function GET(req: Request) {
     if (type === 'revenue') {
       const { rows } = await pool.query(
         'SELECT ' +
-        'TO_CHAR(DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in)), \'YYYY-MM\') as month, ' +
+        'TO_CHAR(DATE_TRUNC(\'month\', COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date), \'YYYY-MM\') as month, ' +
         'COUNT(DISTINCT wo.id) as job_count, ' +
         'COALESCE(SUM(' +
         '  CASE ' +
@@ -72,10 +76,10 @@ export async function GET(req: Request) {
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
         'FROM work_orders wo ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in) IS NOT NULL ' +
+        'WHERE COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date IS NOT NULL ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
-        'GROUP BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in)) ' +
-        'ORDER BY DATE_TRUNC(\'month\', COALESCE(wo.date_complete, wo.referral_dropoff_date, wo.date_in)) DESC ' +
+        'GROUP BY DATE_TRUNC(\'month\', COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date) ' +
+        'ORDER BY DATE_TRUNC(\'month\', COALESCE(NULLIF(wo.date_complete,\'\'), NULLIF(wo.referral_dropoff_date,\'\'), NULLIF(wo.date_in,\'\'))::date) DESC ' +
         'LIMIT 24'
       )
       return NextResponse.json(rows)
