@@ -48,8 +48,7 @@ export async function GET(req: Request) {
         '  (' +
         '    (c.source IS NULL OR c.source != \'referral\') ' +
         '    AND wo.status IN (\'complete\', \'picked-up\') ' +
-        '    AND wo.amount_charged > 0 ' +
-        '    AND (wo.amount_paid IS NULL OR wo.amount_paid < wo.amount_charged) ' +
+        '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
         '  ) OR (' +
         '    c.source = \'referral\' ' +
         '    AND wo.referral_dropoff_date IS NOT NULL ' +
