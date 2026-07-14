@@ -251,13 +251,14 @@ export default function ReportsPage() {
               }
 
               const sumRows = (rows: Record<string, unknown>[], isRef: boolean) => {
-                let revenue = 0, parts = 0, shopCut = 0, net = 0, wade = 0, wayne = 0
+                let revenue = 0, parts = 0, partsCost = 0, shopCut = 0, net = 0, wade = 0, wayne = 0
                 rows.forEach(row => {
                   const c = calcRow(row, isRef)
                   revenue += c.invoice; parts += c.partsCharged; shopCut += c.refCut
                   net += c.net; wade += c.wade; wayne += c.wayne
+                  partsCost += Number(row.parts_cost) || 0
                 })
-                return { revenue, parts, shopCut, net, wade, wayne }
+                return { revenue, parts, partsCost, shopCut, net, wade, wayne }
               }
 
               const ihTotals = sumRows(inHouse, false)
@@ -334,10 +335,14 @@ export default function ReportsPage() {
                       {tbl(referral, true, refTotals)}
                     </div>
                   )}
-                  <div className="grid grid-cols-4 gap-3 mt-2 pt-3 border-t-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-2 pt-3 border-t-2">
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-gray-500 mb-1">Total Revenue</div>
                       <div className="font-bold text-gray-800">{fmt(ihTotals.revenue + refTotals.revenue)}</div>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-red-500 mb-1">WW Spent on Parts</div>
+                      <div className="font-bold text-red-600">{fmt(ihTotals.partsCost + refTotals.partsCost)}</div>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-gray-500 mb-1">Net Split Total</div>
