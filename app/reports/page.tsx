@@ -14,10 +14,13 @@ function fmtDate(d: unknown) {
   return String(d).slice(0, 10)
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl shadow p-4 space-y-3">
-      <h2 className="font-semibold text-gray-800 text-base">{title}</h2>
+      <div>
+        <h2 className="font-semibold text-gray-800 text-base">{title}</h2>
+        {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+      </div>
       {children}
     </div>
   )
@@ -331,7 +334,7 @@ export default function ReportsPage() {
           </Section>
 
           {/* Outstanding Invoices */}
-          <Section title="Outstanding Invoices">
+          <Section title="Outstanding Invoices" subtitle={"Current as of today (" + today + ") \u2014 completed work not yet paid or picked up, in-house and referral"}>
             {outstanding.length === 0 ? <Empty /> : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
