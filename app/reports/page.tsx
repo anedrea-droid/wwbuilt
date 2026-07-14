@@ -30,6 +30,23 @@ function Empty() {
   return <p className="text-sm text-gray-400 italic py-4 text-center">No records found</p>
 }
 
+const STATUS_BADGE: Record<string, string> = {
+  'pending':       'bg-yellow-100 text-yellow-800',
+  'in-progress':   'bg-blue-100 text-blue-800',
+  'waiting-parts': 'bg-orange-100 text-orange-800',
+  'at-shop':       'bg-purple-100 text-purple-700',
+}
+function statusLabel(s: unknown) {
+  return String(s || '-').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+function daysOpen(dateIn: unknown) {
+  if (!dateIn) return null
+  const start = new Date(String(dateIn).slice(0, 10) + 'T00:00:00')
+  const now = new Date()
+  const diff = Math.floor((now.getTime() - start.getTime()) / 86400000)
+  return diff >= 0 ? diff : null
+}
+
 export default function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>('financial')
 
@@ -48,6 +65,8 @@ export default function ReportsPage() {
   const [tripData, setTripData] = useState<{ thisTrip: Record<string, unknown>[]; outstanding: Record<string, unknown>[]; tripDate: string } | null>(null)
   const [tripLoading, setTripLoading] = useState(false)
   const [completed, setCompleted] = useState<Record<string, unknown>[]>([])
+  const [openOrders, setOpenOrders] = useState<Record<string, unknown>[]>([])
+  const [donatedAbandoned, setDonatedAbandoned] = useState<Record<string, unknown>[]>([])
   const [pendingParts, setPendingParts] = useState<Record<string, unknown>[]>([])
   const [partsReport, setPartsReport] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(false)
@@ -123,8 +142,14 @@ export default function ReportsPage() {
       setRefHistory(Array.isArray(h) ? h : [])
     }
     if (tab === 'workorders') {
-      const c = await fetch(base + 'type=completed&from=' + fromDate + '&to=' + toDate).then(x => x.json())
+      const [c, op, da] = await Promise.all([
+        fetch(base + 'type=completed&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
+        fetch(base + 'type=open').then(x => x.json()),
+        fetch(base + 'type=donated-abandoned').then(x => x.json()),
+      ])
       setCompleted(Array.isArray(c) ? c : [])
+      setOpenOrders(Array.isArray(op) ? op : [])
+      setDonatedAbandoned(Array.isArray(da) ? da : [])
     }
     if (tab === 'parts') {
       const [pp, r, pr] = await Promise.all([
@@ -678,6 +703,66 @@ export default function ReportsPage() {
 
       {!loading && tab === 'workorders' && (
         <div className="space-y-5">
+          <Section title="Currently Open Work Orders" subtitle={"Current as of today (" + today + ") \u2014 not yet completed, picked up, donated, or abandoned"}>
+            {openOrders.length === 0 ? <Empty /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                      <th className="pb-2 pr-3">WO#</th>
+                      <th className="pb-2 pr-3">Customer</th>
+                      <th className="pb-2 pr-3">Type</th>
+                      <th className="pb-2 pr-3">Equipment</th>
+                      <th className="pb-2 pr-3">Technician</th>
+                      <th className="pb-2 pr-3">Status</th>
+                      <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 text-right">Days Open</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openOrders.map(row => {
+                      const isRef = row.customer_source === 'referral'
+                      const days = daysOpen(row.date_in)
+                      return (
+                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="py-1.5 pr-3">
+                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                              {String(row.order_number)}
+                            </Link>
+                          </td>
+                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3">
+                            {isRef
+                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
+                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                          <td className="py-1.5 pr-3">
+                            <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
+                              {String(row.technician || '-')}
+                            </span>
+                          </td>
+                          <td className="py-1.5 pr-3">
+                            <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (STATUS_BADGE[String(row.status)] || 'bg-gray-100 text-gray-600')}>
+                              {statusLabel(row.status)}
+                            </span>
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                          <td className="py-1.5 text-right text-gray-600">{days !== null ? days + 'd' : '-'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td colSpan={8} className="pt-2 text-gray-600">{openOrders.length} open work order{openOrders.length !== 1 ? 's' : ''}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </Section>
+
           <Section title={'Completed Jobs - ' + fromDate + ' to ' + toDate}>
             {completed.length === 0 ? <Empty /> : (
               <div className="overflow-x-auto">
@@ -723,6 +808,57 @@ export default function ReportsPage() {
                       <td className="pt-2 text-right">
                         {fmt(completed.reduce((s, r) => s + Number(r.amount_charged || 0), 0))}
                       </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Donated / Abandoned Equipment" subtitle="Full history \u2014 not tracked as revenue or outstanding invoices">
+            {donatedAbandoned.length === 0 ? <Empty /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                      <th className="pb-2 pr-3">WO#</th>
+                      <th className="pb-2 pr-3">Customer</th>
+                      <th className="pb-2 pr-3">Equipment</th>
+                      <th className="pb-2 pr-3">Status</th>
+                      <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 pr-3">Shop Status</th>
+                      <th className="pb-2 pr-3 text-right">Asking Price</th>
+                      <th className="pb-2 text-right">Sale Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {donatedAbandoned.map(row => (
+                      <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                        <td className="py-1.5 pr-3">
+                          <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                            {String(row.order_number)}
+                          </Link>
+                        </td>
+                        <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                        <td className="py-1.5 pr-3 text-gray-500 text-xs">
+                          {String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}
+                          {row.serial_number ? <span className="text-gray-400"> (S/N: {String(row.serial_number)})</span> : null}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.status === 'donated' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800')}>
+                            {row.status === 'donated' ? 'Donated' : 'Abandoned'}
+                          </span>
+                        </td>
+                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                        <td className="py-1.5 pr-3 text-gray-500 text-xs capitalize">{String(row.shop_status || '-')}</td>
+                        <td className="py-1.5 pr-3 text-right">{row.asking_price ? fmt(row.asking_price) : '-'}</td>
+                        <td className="py-1.5 text-right text-green-600 font-medium">{row.sale_price ? fmt(row.sale_price) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td colSpan={8} className="pt-2 text-gray-600">{donatedAbandoned.length} item{donatedAbandoned.length !== 1 ? 's' : ''}</td>
                     </tr>
                   </tfoot>
                 </table>
