@@ -35,6 +35,7 @@ export async function GET(req: Request) {
     if (type === 'outstanding') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, ' +
+        'wo.date_complete, wo.referral_dropoff_date, ' +
         'c.name as customer_name, c.phone as customer_phone, c.source as customer_source, c.referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'CASE WHEN c.source = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
