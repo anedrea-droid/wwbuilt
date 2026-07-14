@@ -345,6 +345,7 @@ export default function ReportsPage() {
                       <th className="pb-2 pr-3">Type</th>
                       <th className="pb-2 pr-3">Equipment</th>
                       <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 pr-3">Completed / Returned</th>
                       <th className="pb-2 pr-3 text-right">Invoiced</th>
                       <th className="pb-2 pr-3 text-right">Paid</th>
                       <th className="pb-2 text-right">Balance</th>
@@ -355,6 +356,7 @@ export default function ReportsPage() {
                       const isRef = row.customer_source === 'referral'
                       const charged = Number(row.amount_charged) || 0
                       const paid = Number(row.amount_paid) || 0
+                      const completedDate = isRef ? row.referral_dropoff_date : row.date_complete
                       return (
                         <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-1.5 pr-3">
@@ -370,6 +372,7 @@ export default function ReportsPage() {
                           </td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(completedDate)}</td>
                           <td className="py-1.5 pr-3 text-right font-medium">
                             {charged > 0
                               ? fmt(charged)
@@ -387,8 +390,8 @@ export default function ReportsPage() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 font-semibold">
-                      <td colSpan={5} className="pt-2 text-gray-600">Outstanding Balance</td>
-                      <td colSpan={2} className="pt-2 text-right text-red-600">
+                      <td colSpan={6} className="pt-2 text-gray-600">Outstanding Balance</td>
+                      <td colSpan={3} className="pt-2 text-right text-red-600">
                         {fmt(outstanding.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
                       </td>
                     </tr>
