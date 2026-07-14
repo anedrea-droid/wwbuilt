@@ -174,6 +174,7 @@ export async function GET(req: Request) {
     if (type === 'completed') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.amount_charged, wo.amount_paid, ' +
+        'COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
         'wo.technician, wo.labor_hours, wo.labor_rate, ' +
         'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
@@ -183,10 +184,41 @@ export async function GET(req: Request) {
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE wo.status IN (\'complete\', \'picked-up\') ' +
-        'AND wo.date_complete >= $1 AND wo.date_complete <= $2 ' +
+        'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date >= $1 ' +
+        'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
         'GROUP BY wo.id, c.name, c.source, c.referral_shop, e.type, e.make, e.model ' +
-        'ORDER BY wo.date_complete DESC',
+        'ORDER BY effective_date DESC',
         [from, to]
+      )
+      return NextResponse.json(rows)
+    }
+
+    if (type === 'open') {
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.technician, ' +
+        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'WHERE wo.status NOT IN (\'complete\', \'picked-up\', \'donated\', \'abandoned\', \'at-shop\') ' +
+        'ORDER BY wo.date_in ASC'
+      )
+      return NextResponse.json(rows)
+    }
+
+    if (type === 'donated-abandoned') {
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.complaint, ' +
+        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, e.serial_number, ' +
+        'se.status as shop_status, se.asking_price, se.sale_price, se.sale_date, se.condition_notes ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN shop_equipment se ON se.work_order_id = wo.id ' +
+        'WHERE wo.status IN (\'donated\', \'abandoned\') ' +
+        'ORDER BY wo.date_in DESC'
       )
       return NextResponse.json(rows)
     }
