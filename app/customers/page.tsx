@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 export default function CustomersPage() {
@@ -141,12 +140,21 @@ export default function CustomersPage() {
       ) : (
         <div className="space-y-2">
           {customers.map(c => (
-            <Link key={c.id} href={'/customers/' + c.id}
-              className="block bg-white rounded-xl shadow px-4 py-3 hover:bg-orange-50 transition">
+            <div key={c.id}
+              onClick={() => router.push('/customers/' + c.id)}
+              className="block bg-white rounded-xl shadow px-4 py-3 hover:bg-orange-50 transition cursor-pointer">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-semibold">{c.name}</p>
-                  <p className="text-sm text-gray-500">{c.phone || 'No phone'}</p>
+                  {c.phone ? (
+                    <a href={'tel:' + String(c.phone).replace(/[^0-9+]/g, '')}
+                      onClick={e => e.stopPropagation()}
+                      className="text-sm text-orange-600 hover:underline">
+                      {c.phone}
+                    </a>
+                  ) : (
+                    <p className="text-sm text-gray-500">No phone</p>
+                  )}
                 </div>
                 {c.source === 'referral' && (
                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
@@ -154,7 +162,7 @@ export default function CustomersPage() {
                   </span>
                 )}
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}
