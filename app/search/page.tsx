@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Search, Users, Wrench, ChevronRight } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -34,6 +35,7 @@ const STATUS_CFG: Record<string, { label: string; cls: string }> = {
 }
 
 export default function SearchPage() {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -100,23 +102,25 @@ export default function SearchPage() {
               </p>
               <div className="space-y-1.5">
                 {results.customers.map(c => (
-                  <Link key={c.id} href={'/customers/' + c.id}>
-                    <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                      <CardContent className="p-3 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                          {c.name.charAt(0)}
+                  <Card key={c.id} onClick={() => router.push('/customers/' + c.id)} className="hover:shadow-md transition-shadow cursor-pointer">
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {c.name.charAt(0)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-800">{c.name}</div>
+                        <div className="text-sm text-slate-500">
+                          {c.phone && (
+                            <a href={'tel:' + c.phone.replace(/[^0-9+]/g, '')} onClick={e => e.stopPropagation()} className="text-orange-600 hover:underline">
+                              {c.phone}
+                            </a>
+                          )}
+                          {c.source === 'referral' && <span className="ml-2 text-xs text-slate-400">via {c.referralShop}</span>}
                         </div>
-                        <div className="flex-1">
-                          <div className="font-medium text-slate-800">{c.name}</div>
-                          <div className="text-sm text-slate-500">
-                            {c.phone}
-                            {c.source === 'referral' && <span className="ml-2 text-xs text-slate-400">via {c.referralShop}</span>}
-                          </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-slate-300" />
-                      </CardContent>
-                    </Card>
-                  </Link>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-300" />
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             </section>
