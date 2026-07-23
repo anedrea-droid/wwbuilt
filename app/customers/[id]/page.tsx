@@ -249,7 +249,7 @@ export default function CustomerDetail() {
           ) : (
             <div className="space-y-2">
               {c.phone ? (
-                <a href={'tel:' + c.phone} className="flex items-center gap-2 text-sm text-slate-700 hover:text-orange-600">
+                <a href={'tel:' + c.phone.replace(/[^0-9+]/g, '')} className="flex items-center gap-2 text-sm text-slate-700 hover:text-orange-600">
                   <Phone className="h-4 w-4 text-slate-400" />
                   {c.phone}
                 </a>
