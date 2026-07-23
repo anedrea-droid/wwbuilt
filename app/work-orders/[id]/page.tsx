@@ -307,9 +307,9 @@ export default function WorkOrderDetail() {
       {editing ? (
         <textarea value={String(form[key] ?? '')}
           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          rows={3} className="w-full border rounded px-2 py-1 text-sm" />
+          rows={3} className="w-full border rounded px-2 py-1 text-sm uppercase placeholder:normal-case" />
       ) : (
-        <p className="text-sm text-gray-800 whitespace-pre-wrap">{String(wo[key] || '-')}</p>
+        <p className="text-sm text-gray-800 whitespace-pre-wrap uppercase">{String(wo[key] || '-')}</p>
       )}
     </div>
   )
@@ -343,7 +343,11 @@ export default function WorkOrderDetail() {
           {customer ? (
             <>
               <p className="font-medium">{customer.name}</p>
-              <p className="text-sm text-gray-500">{customer.phone}</p>
+              {customer.phone && (
+                <a href={'tel:' + customer.phone.replace(/[^0-9+]/g, '')} className="text-sm text-orange-600 hover:underline">
+                  {customer.phone}
+                </a>
+              )}
               {customer.source === 'referral' && (
                 <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                   Referral: {customer.referralShop}
