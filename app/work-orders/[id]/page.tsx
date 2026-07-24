@@ -222,6 +222,60 @@ export default function WorkOrderDetail() {
     w.print()
   }
 
+  function printWorkOrder() {
+    if (!wo) return
+    const equipDesc = equipment
+      ? [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ') + (equipment.serialNumber ? ' | S/N: ' + equipment.serialNumber : '')
+      : '-'
+    const noteLines = Array.from({ length: 16 }).map(() => '<div class="ruled-line"></div>').join('')
+    const html = '<!DOCTYPE html><html><head><title>Work Order ' + (wo.orderNumber || '') + '</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;max-width:800px;margin:30px auto;padding:20px;color:#222;}'
+      + '.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #222;padding-bottom:14px;margin-bottom:20px;}'
+      + '.shop-name{font-size:20px;font-weight:bold;}'
+      + '.sub{color:#666;font-size:12px;margin-top:2px;}'
+      + '.wo-number{font-size:34px;font-weight:bold;border:2px solid #222;padding:8px 18px;border-radius:8px;}'
+      + '.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}'
+      + '.section{margin-bottom:14px;}'
+      + '.label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px;}'
+      + '.value{font-size:15px;margin-top:2px;}'
+      + '.notes-title{font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 6px;border-bottom:1px solid #222;padding-bottom:4px;}'
+      + '.ruled-line{border-bottom:1px solid #999;height:30px;}'
+      + '.bottom-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:24px;}'
+      + '.bottom-field{border-top:1px solid #222;padding-top:6px;font-size:12px;color:#666;}'
+      + '@media print{body{margin:15px;} .no-print{display:none;}}'
+      + '</style></head><body>'
+      + '<div class="no-print" style="text-align:right;margin-bottom:10px;">'
+      + '<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">Print</button>'
+      + '</div>'
+      + '<div class="header">'
+      + '<div><div class="shop-name">WW Small Engine</div><div class="sub">Shop Work Order</div></div>'
+      + '<div class="wo-number">' + (wo.orderNumber || '') + '</div>'
+      + '</div>'
+      + '<div class="grid">'
+      + '<div class="section"><div class="label">Customer</div><div class="value">' + (customer?.name || '') + '</div></div>'
+      + '<div class="section"><div class="label">Phone</div><div class="value">' + (customer?.phone || '-') + '</div></div>'
+      + '<div class="section"><div class="label">Equipment</div><div class="value">' + equipDesc + '</div></div>'
+      + '<div class="section"><div class="label">Date In</div><div class="value">' + (wo.dateIn ? String(wo.dateIn).slice(0,10) : '-') + '</div></div>'
+      + '<div class="section"><div class="label">Technician</div><div class="value">' + (wo.technician || '-') + '</div></div>'
+      + '<div class="section"><div class="label">Source</div><div class="value">' + (customer?.source === 'referral' ? 'Referral - ' + (customer?.referralShop || '') : 'Direct Customer') + '</div></div>'
+      + '</div>'
+      + '<div class="section"><div class="label">Problem Reported</div><div class="value">' + (wo.complaint || '-') + '</div></div>'
+      + '<div class="notes-title">Technician Notes / Work Performed</div>'
+      + noteLines
+      + '<div class="bottom-fields">'
+      + '<div class="bottom-field">Labor Hours</div>'
+      + '<div class="bottom-field">Date Complete</div>'
+      + '<div class="bottom-field">Parts Used</div>'
+      + '</div>'
+      + '</body></html>'
+    const w = window.open('', '_blank', 'width=850,height=900')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+  }
+
   async function markReceived(partId: string) {
     const today = new Date().toISOString().split('T')[0]
     const res = await fetch('/api/parts/' + partId, {
@@ -328,6 +382,10 @@ export default function WorkOrderDetail() {
           <span className={'px-3 py-1 rounded-full text-xs font-semibold ' + (STATUS_COLORS[wo.status] || 'bg-gray-100 text-gray-700')}>
             {wo.status}
           </span>
+          <button onClick={printWorkOrder}
+            className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
+            Print Work Order
+          </button>
           {wo.status !== 'abandoned' && wo.status !== 'donated' && wo.status !== 'picked-up' && (
             <button onClick={() => setShowWWModal(true)}
               className="text-xs bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-200">
