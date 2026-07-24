@@ -64,6 +64,10 @@ export default function ReportsPage() {
   const [tripDate, setTripDate] = useState(new Date().toISOString().slice(0, 10))
   const [tripData, setTripData] = useState<{ thisTrip: Record<string, unknown>[]; outstanding: Record<string, unknown>[]; tripDate: string } | null>(null)
   const [tripLoading, setTripLoading] = useState(false)
+  const [settleDate, setSettleDate] = useState(new Date().toISOString().slice(0, 10))
+  const [settleData, setSettleData] = useState<Record<string, unknown>[]>([])
+  const [settleLoading, setSettleLoading] = useState(false)
+  const [hasRunSettlement, setHasRunSettlement] = useState(false)
   const [completed, setCompleted] = useState<Record<string, unknown>[]>([])
   const [openOrders, setOpenOrders] = useState<Record<string, unknown>[]>([])
   const [donatedAbandoned, setDonatedAbandoned] = useState<Record<string, unknown>[]>([])
@@ -104,6 +108,19 @@ export default function ReportsPage() {
     w.document.write('<p style="margin-top:20px;font-size:11px;color:#666">Combined WW Owes: $' + (tot1 + tot2).toFixed(2) + '</p>')
     w.document.write('</body></html>')
     w.document.close()
+  }
+
+    async function loadSettlement(date: string) {
+    setSettleLoading(true)
+    setHasRunSettlement(true)
+    try {
+      const res = await fetch('/api/reports?type=shop-settlement&date=' + date)
+      const data = await res.json()
+      setSettleData(Array.isArray(data.rows) ? data.rows : [])
+    } catch {
+      setSettleData([])
+    }
+    setSettleLoading(false)
   }
 
     async function loadTrip(date: string) {
@@ -631,6 +648,94 @@ export default function ReportsPage() {
                 </div>
               </div>
             )}
+          </Section>
+
+          {/* Shop Payment Settlement */}
+          <Section title="Shop Payment Settlement" subtitle="Mark work orders as paid on the referral shop's page, then run this for the day you visited the shop">
+            <div className="flex items-end gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
+                <input type="date" value={settleDate} onChange={e => setSettleDate(e.target.value)}
+                  className="border rounded-md px-3 py-1.5 text-sm" />
+              </div>
+              <button onClick={() => loadSettlement(settleDate)}
+                className="bg-orange-500 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600">
+                {settleLoading ? 'Loading...' : 'Generate Report'}
+              </button>
+            </div>
+            {!hasRunSettlement ? (
+              <p className="text-sm text-gray-400 italic py-4 text-center">Pick the date you were paid at the shop and click Generate Report</p>
+            ) : settleData.length === 0 ? (
+              <Empty />
+            ) : (() => {
+              const calc = (row: Record<string, unknown>) => {
+                const partsCharged = Number(row.parts_charged) || 0
+                const shopAmt = Number(row.shop_payment_amount) || 0
+                const amtCharged = Number(row.amount_charged) || 0
+                const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
+                const paid = shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : laborEst + partsCharged
+                const afterParts = paid - partsCharged
+                const shopCut = afterParts > 0 ? afterParts * 0.20 : 0
+                const net = afterParts - shopCut
+                const wade = net * 0.60
+                const wayne = net * 0.40
+                return { paid, partsCharged, shopCut, wade, wayne }
+              }
+              const totals = settleData.reduce((acc: { paid: number; parts: number; shopCut: number; wade: number; wayne: number }, row) => {
+                const c = calc(row)
+                return {
+                  paid: acc.paid + c.paid, parts: acc.parts + c.partsCharged,
+                  shopCut: acc.shopCut + c.shopCut, wade: acc.wade + c.wade, wayne: acc.wayne + c.wayne,
+                }
+              }, { paid: 0, parts: 0, shopCut: 0, wade: 0, wayne: 0 })
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                        <th className="pb-2 pr-3">WO#</th>
+                        <th className="pb-2 pr-3">Customer</th>
+                        <th className="pb-2 pr-3 text-right">Amount Paid</th>
+                        <th className="pb-2 pr-3 text-right">Parts Chg to Customer</th>
+                        <th className="pb-2 pr-3 text-right">To Referral Shop</th>
+                        <th className="pb-2 pr-3 text-right text-orange-600">Wade</th>
+                        <th className="pb-2 text-right text-blue-600">Wayne</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settleData.map(row => {
+                        const c = calc(row)
+                        return (
+                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                            <td className="py-1.5 pr-3">
+                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                                {String(row.order_number)}
+                              </Link>
+                            </td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                            <td className="py-1.5 pr-3 text-right font-medium">{fmt(c.paid)}</td>
+                            <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
+                            <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.shopCut)}</td>
+                            <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{fmt(c.wade)}</td>
+                            <td className="py-1.5 text-right text-blue-600 font-medium">{fmt(c.wayne)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold">
+                        <td colSpan={2} className="pt-2 text-gray-600">Grand Totals ({settleData.length} WO{settleData.length !== 1 ? 's' : ''})</td>
+                        <td className="pt-2 text-right">{fmt(totals.paid)}</td>
+                        <td className="pt-2 text-right text-gray-600">{fmt(totals.parts)}</td>
+                        <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>
+                        <td className="pt-2 text-right text-orange-600">{fmt(totals.wade)}</td>
+                        <td className="pt-2 text-right text-blue-600">{fmt(totals.wayne)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
+            })()}
           </Section>
 
           {/* Full Referral History */}
