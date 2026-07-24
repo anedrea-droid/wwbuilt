@@ -148,6 +148,28 @@ export async function GET(req: Request) {
       }
     }
 
+    if (type === 'shop-settlement') {
+      const settleDate = searchParams.get('date') || new Date().toISOString().slice(0, 10)
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.shop_payment_amount, wo.shop_payment_date, wo.amount_charged, ' +
+        'wo.labor_hours, wo.labor_rate, ' +
+        'c.name as customer_name, c.referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
+        'WHERE c.source = \'referral\' ' +
+        'AND wo.shop_payment_received = true ' +
+        'AND wo.shop_payment_date::date = $1 ' +
+        'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
+        'ORDER BY c.name ASC',
+        [settleDate]
+      )
+      return NextResponse.json({ rows, settleDate })
+    }
+
         if (type === 'referral-history') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.status, wo.date_complete, wo.amount_charged, ' +
