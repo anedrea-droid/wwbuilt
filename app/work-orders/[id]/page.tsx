@@ -59,6 +59,11 @@ export default function WorkOrderDetail() {
   const [photos, setPhotos] = useState<{id:string;url:string;public_id:string}[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError, setPhotoError] = useState('')
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    setIsMobile(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))
+  }, [])
 
   function normalizeDates(data: WorkOrder): WorkOrder {
     const d = (v: unknown) => v ? String(v).slice(0, 10) : ''
@@ -276,6 +281,32 @@ export default function WorkOrderDetail() {
     w.focus()
   }
 
+  function sendPickupReminder() {
+    if (!wo || !customer?.phone) return
+    const equipDesc = equipment
+      ? [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ')
+      : 'your equipment'
+    const firstName = (customer.name || '').split(' ')[0] || 'there'
+    const isRef = customer.source === 'referral'
+
+    let message: string
+    if (isRef) {
+      const shopName = customer.referralShop || 'the shop'
+      message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
+        + equipDesc + ' is completed and back at ' + shopName + ', ready for pickup. Thanks!'
+    } else {
+      const partsTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
+      const laborTotal = (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+      const amount = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : laborTotal + partsTotal
+      message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
+        + equipDesc + ' is ready for pickup! Total due: $' + amount.toFixed(2) + '. Thanks!'
+    }
+
+    const digits = customer.phone.replace(/[^0-9+]/g, '')
+    const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?'
+    window.location.href = 'sms:' + digits + separator + 'body=' + encodeURIComponent(message)
+  }
+
   async function markReceived(partId: string) {
     const today = new Date().toISOString().split('T')[0]
     const res = await fetch('/api/parts/' + partId, {
@@ -386,6 +417,12 @@ export default function WorkOrderDetail() {
             className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
             Print Work Order
           </button>
+          {isMobile && customer?.phone && (wo.status === 'complete' || (customer.source === 'referral' && wo.status === 'at-shop')) && (
+            <button onClick={sendPickupReminder}
+              className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700">
+              Text Pickup Reminder
+            </button>
+          )}
           {wo.status !== 'abandoned' && wo.status !== 'donated' && wo.status !== 'picked-up' && (
             <button onClick={() => setShowWWModal(true)}
               className="text-xs bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-200">
