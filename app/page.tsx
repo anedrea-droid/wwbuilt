@@ -87,7 +87,7 @@ export default function WorkOrdersDashboard() {
   return (
     <div className="max-w-3xl mx-auto px-3 pt-4 pb-2">
       {/* Stats row */}
-      <div className="grid grid-cols-6 gap-2 mb-4">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
         {[
           { label: 'Active',  val: stats.active,  cls: 'text-slate-800' },
           { label: 'Wade',    val: stats.wade,    cls: 'text-orange-600' },
