@@ -245,33 +245,34 @@ export default function ReportsPage() {
         <div className="space-y-5">
 
           {/* Payout Summary */}
-          <Section title={'Payout Summary - ' + fromDate + ' to ' + toDate}>
+          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Unpaid work appears under Outstanding Invoices below.">
             {payouts.length === 0 ? <Empty /> : (() => {
-              const inHouse = payouts.filter(r => r.customer_source !== 'referral')
-              const referral = payouts.filter(r => r.customer_source === 'referral')
+              const totalPartsCostAll = payouts.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
 
               const calcRow = (row: Record<string, unknown>, isRef: boolean) => {
                 const partsCharged = Number(row.parts_charged) || 0
                 const amtCharged = Number(row.amount_charged) || 0
+                const amtPaid = Number(row.amount_paid) || 0
                 const shopAmt = Number(row.shop_payment_amount) || 0
-                const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
-                const invoice = isRef
-                  ? (shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : laborEst + partsCharged)
-                  : (amtCharged > 0 ? amtCharged : laborEst + partsCharged)
-                const isEst = isRef ? shopAmt === 0 : amtCharged === 0
-                const afterParts = invoice - partsCharged
+                const shopReceived = row.shop_payment_received === true
+                const isPaid = isRef ? shopReceived : (amtCharged > 0 && amtPaid > 0)
+                const paidAmount = isRef ? shopAmt : amtPaid
+                const afterParts = paidAmount - partsCharged
                 const refCut = isRef && afterParts > 0 ? afterParts * 0.20 : 0
                 const net = afterParts - refCut
                 const wade = net * 0.60
                 const wayne = net * 0.40
-                return { invoice, partsCharged, afterParts, refCut, net, wade, wayne, isEst }
+                return { paidAmount, partsCharged, afterParts, refCut, net, wade, wayne, isPaid }
               }
+
+              const inHouse = payouts.filter(r => r.customer_source !== 'referral' && calcRow(r, false).isPaid)
+              const referral = payouts.filter(r => r.customer_source === 'referral' && calcRow(r, true).isPaid)
 
               const sumRows = (rows: Record<string, unknown>[], isRef: boolean) => {
                 let revenue = 0, parts = 0, partsCost = 0, shopCut = 0, net = 0, wade = 0, wayne = 0
                 rows.forEach(row => {
                   const c = calcRow(row, isRef)
-                  revenue += c.invoice; parts += c.partsCharged; shopCut += c.refCut
+                  revenue += c.paidAmount; parts += c.partsCharged; shopCut += c.refCut
                   net += c.net; wade += c.wade; wayne += c.wayne
                   partsCost += Number(row.parts_cost) || 0
                 })
@@ -280,6 +281,7 @@ export default function ReportsPage() {
 
               const ihTotals = sumRows(inHouse, false)
               const refTotals = sumRows(referral, true)
+              const totalPaid = ihTotals.revenue + refTotals.revenue
 
               const tbl = (rows: Record<string, unknown>[], isRef: boolean, totals: { revenue: number; parts: number; shopCut: number; net: number; wade: number; wayne: number }) => (
                 <div className="overflow-x-auto">
@@ -290,7 +292,7 @@ export default function ReportsPage() {
                         <th className="pb-2 pr-3">Customer</th>
                         <th className="pb-2 pr-3">Date</th>
                         {isRef && <th className="pb-2 pr-3">Shop</th>}
-                        <th className="pb-2 pr-3 text-right">Revenue</th>
+                        <th className="pb-2 pr-3 text-right">Amount Paid</th>
                         <th className="pb-2 pr-3 text-right">Parts Chg</th>
                         {isRef && <th className="pb-2 pr-3 text-right">Shop 20%</th>}
                         <th className="pb-2 pr-3 text-right">Net Split</th>
@@ -311,9 +313,7 @@ export default function ReportsPage() {
                             <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
                             <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.effective_date ?? row.date_complete)}</td>
                             {isRef && <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.referral_shop || '-')}</td>}
-                            <td className="py-1.5 pr-3 text-right">
-                              {fmt(c.invoice)}{c.isEst && <span className="text-gray-400 text-xs ml-1">*</span>}
-                            </td>
+                            <td className="py-1.5 pr-3 text-right">{fmt(c.paidAmount)}</td>
                             <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
                             {isRef && <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.refCut)}</td>}
                             <td className="py-1.5 pr-3 text-right">{fmt(c.net)}</td>
@@ -340,30 +340,38 @@ export default function ReportsPage() {
 
               return (
                 <div className="space-y-5">
-                  {inHouse.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">In-House Jobs</h3>
-                      {tbl(inHouse, false, ihTotals)}
-                    </div>
-                  )}
-                  {referral.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Referral Jobs</h3>
-                      {tbl(referral, true, refTotals)}
-                    </div>
+                  {inHouse.length === 0 && referral.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic py-4 text-center">No paid jobs in this date range yet - check Outstanding Invoices below</p>
+                  ) : (
+                    <>
+                      {inHouse.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">In-House Jobs</h3>
+                          {tbl(inHouse, false, ihTotals)}
+                        </div>
+                      )}
+                      {referral.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Referral Jobs</h3>
+                          {tbl(referral, true, refTotals)}
+                        </div>
+                      )}
+                    </>
                   )}
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-2 pt-3 border-t-2">
-                    <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-gray-500 mb-1">Total Revenue</div>
-                      <div className="font-bold text-gray-800">{fmt(ihTotals.revenue + refTotals.revenue)}</div>
-                    </div>
                     <div className="bg-red-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-red-500 mb-1">WW Spent on Parts</div>
-                      <div className="font-bold text-red-600">{fmt(ihTotals.partsCost + refTotals.partsCost)}</div>
+                      <div className="text-xs text-red-500 mb-1">Total Spent (Parts)</div>
+                      <div className="font-bold text-red-600">{fmt(totalPartsCostAll)}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">All completed jobs</div>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-green-600 mb-1">Total Paid</div>
+                      <div className="font-bold text-green-700">{fmt(totalPaid)}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">Actually received</div>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-gray-500 mb-1">Net Split Total</div>
-                      <div className="font-bold text-gray-800">{fmt(ihTotals.net + refTotals.net)}</div>
+                      <div className="text-xs text-gray-500 mb-1">Net (Paid - Spent)</div>
+                      <div className="font-bold text-gray-800">{fmt(totalPaid - totalPartsCostAll)}</div>
                     </div>
                     <div className="bg-orange-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-orange-600 mb-1">Wade Total</div>
@@ -374,7 +382,7 @@ export default function ReportsPage() {
                       <div className="font-bold text-blue-600">{fmt(ihTotals.wayne + refTotals.wayne)}</div>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400">* Revenue estimated from labor + parts (Shop Payment or Invoice Amount not yet entered)</p>
+                  <p className="text-xs text-gray-400">Total Spent (Parts) includes every completed job in this date range, whether paid or not. Total Paid, Wade, and Wayne totals only include jobs actually paid.</p>
                 </div>
               )
             })()}
@@ -721,7 +729,10 @@ export default function ReportsPage() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 font-semibold">
-                        <td colSpan={5} className="pt-2 text-gray-600">Total WW Owes to Shop</td>
+                        <td colSpan={4} className="pt-2 text-gray-600">Totals</td>
+                        <td className="pt-2 text-right">
+                          {fmt(atShop.reduce((s, row) => s + (Number(row.amount_charged) || 0), 0))}
+                        </td>
                         <td className="pt-2 text-right text-orange-600">
                           {fmt(atShop.reduce((s, row) => {
                             const invoice = Number(row.amount_charged) || 0
