@@ -13,8 +13,8 @@ export async function GET(req: Request) {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_complete, wo.referral_dropoff_date, wo.date_in, ' +
         'COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
-        'wo.amount_charged, wo.labor_hours, wo.labor_rate, ' +
-        'wo.shop_payment_amount, ' +
+        'wo.amount_charged, wo.amount_paid, wo.labor_hours, wo.labor_rate, ' +
+        'wo.shop_payment_amount, wo.shop_payment_received, wo.status, ' +
         'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
@@ -25,6 +25,10 @@ export async function GET(req: Request) {
         'WHERE COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date >= $1 ' +
         'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND (' +
+        '  ((c.source IS NULL OR c.source != \'referral\') AND wo.status IN (\'complete\', \'picked-up\'))' +
+        '  OR (c.source = \'referral\' AND wo.status IN (\'at-shop\', \'complete\', \'picked-up\'))' +
+        ') ' +
         'GROUP BY wo.id, c.name, c.source, c.referral_shop ' +
         'ORDER BY effective_date DESC',
         [from, to]
