@@ -5,6 +5,7 @@ import Link from 'next/link'
 
 interface WorkOrder {
   id: string; orderNumber: string; customerId: string; equipmentId: string
+  source?: string; referralShop?: string
   status: string; technician: string; complaint: string; diagnosis: string
   workDone: string; laborHours: number; laborRate: number; dateIn: string
   referralPickupDate?: string; referralDropoffDate?: string
@@ -203,7 +204,7 @@ export default function WorkOrderDetail() {
       + '<div class="section"><div class="label">Work Order</div><div class="value">' + (wo.orderNumber || '') + '</div></div>'
       + '<div class="section"><div class="label">Date Returned to Shop</div><div class="value">' + (wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0,10) : '-') + '</div></div>'
       + '<div class="section"><div class="label">Customer</div><div class="value">' + (customer.name || '') + '</div></div>'
-      + '<div class="section"><div class="label">Referring Shop</div><div class="value">' + (customer.referralShop || '') + '</div></div>'
+      + '<div class="section"><div class="label">Referring Shop</div><div class="value">' + (wo.referralShop || customer.referralShop || '') + '</div></div>'
       + '</div>'
       + '<div class="section"><div class="label">Equipment</div><div class="value">' + [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ') + (equipment.serialNumber ? ' | S/N: ' + equipment.serialNumber : '') + '</div></div>'
       + '<div class="section"><div class="label">Problem Reported</div><div class="value">' + (wo.complaint || '-') + '</div></div>'
@@ -265,7 +266,7 @@ export default function WorkOrderDetail() {
       + '<div class="section"><div class="label">Equipment</div><div class="value">' + equipDesc + '</div></div>'
       + '<div class="section"><div class="label">Date In</div><div class="value">' + (wo.dateIn ? String(wo.dateIn).slice(0,10) : '-') + '</div></div>'
       + '<div class="section"><div class="label">Technician</div><div class="value">' + (wo.technician || '-') + '</div></div>'
-      + '<div class="section"><div class="label">Source</div><div class="value">' + (customer?.source === 'referral' ? 'Referral - ' + (customer?.referralShop || '') : 'Direct Customer') + '</div></div>'
+      + '<div class="section"><div class="label">Source</div><div class="value">' + ((wo.source || customer?.source) === 'referral' ? 'Referral - ' + (wo.referralShop || customer?.referralShop || '') : 'Direct Customer') + '</div></div>'
       + '</div>'
       + '<div class="section"><div class="label">Problem Reported</div><div class="value">' + (wo.complaint || '-') + '</div></div>'
       + '<div class="notes-title">Technician Notes / Work Performed</div>'
@@ -289,11 +290,11 @@ export default function WorkOrderDetail() {
       ? [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ')
       : 'your equipment'
     const firstName = (customer.name || '').split(' ')[0] || 'there'
-    const isRef = customer.source === 'referral'
+    const isRef = (wo.source || customer.source) === 'referral'
 
     let message: string
     if (isRef) {
-      const shopName = customer.referralShop || 'the shop'
+      const shopName = wo.referralShop || customer.referralShop || 'the shop'
       message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
         + equipDesc + ' is completed and back at ' + shopName + ', ready for pickup. Thanks!'
     } else {
@@ -375,6 +376,13 @@ export default function WorkOrderDetail() {
 
   if (!wo) return <div className="p-8 text-gray-500">Loading...</div>
 
+  // Use this work order's own snapshot of source/referral shop (captured when it was
+  // created) so later changes to the customer's classification never rewrite this
+  // job's history. Falls back to the live customer record for older jobs created
+  // before this field existed.
+  const woSource = wo.source || customer?.source
+  const woReferralShop = wo.referralShop || customer?.referralShop
+
   const field = (label: string, key: keyof WorkOrder, type = 'text') => (
     <div>
       <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
@@ -419,7 +427,7 @@ export default function WorkOrderDetail() {
             className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
             Print Work Order
           </button>
-          {isMobile && customer?.phone && (wo.status === 'complete' || (customer.source === 'referral' && wo.status === 'at-shop')) && (
+          {isMobile && customer?.phone && (wo.status === 'complete' || ((wo.source || customer.source) === 'referral' && wo.status === 'at-shop')) && (
             <button onClick={sendPickupReminder}
               className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700">
               Text Pickup Reminder
@@ -445,9 +453,9 @@ export default function WorkOrderDetail() {
                   {customer.phone}
                 </a>
               )}
-              {customer.source === 'referral' && (
+              {woSource === 'referral' && (
                 <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                  Referral: {customer.referralShop}
+                  Referral: {woReferralShop}
                 </span>
               )}
               <Link href={'/customers/' + customer.id} className="block text-xs text-orange-500 hover:underline mt-2">
@@ -850,12 +858,12 @@ export default function WorkOrderDetail() {
 
 
       {/* Referral Shop Tracking - only shown for referral customers */}
-      {customer?.source === 'referral' && (
+      {woSource === 'referral' && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl shadow p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-blue-800">Referral Shop Tracking</h2>
-              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{customer?.referralShop || 'Referral Shop'}</span>
+              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{woReferralShop || 'Referral Shop'}</span>
             </div>
             <div className="flex items-center gap-2">
               {wo.referralDropoffDate && (
@@ -996,7 +1004,7 @@ export default function WorkOrderDetail() {
           const estimatedTotal = laborTotal + partsChargeTotal
           const invoice = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : estimatedTotal
           const partsOurCost = parts.reduce((sum, p) => sum + (Number(p.cost) * Number(p.quantity)), 0)
-          const isReferral = customer?.source === 'referral'
+          const isReferral = woSource === 'referral'
           const afterParts = invoice - partsChargeTotal
           const referralCut = isReferral ? afterParts * 0.20 : 0
           const netToSplit = afterParts - referralCut
@@ -1017,7 +1025,7 @@ export default function WorkOrderDetail() {
               </div>
               {isReferral && (
                 <div className="flex justify-between text-red-600">
-                  <span>Referral Shop Cut (20% of net) - {customer?.referralShop || 'Other Shop'}</span>
+                  <span>Referral Shop Cut (20% of net) - {woReferralShop || 'Other Shop'}</span>
                   <span>-${referralCut.toFixed(2)}</span>
                 </div>
               )}
