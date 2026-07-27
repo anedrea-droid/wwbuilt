@@ -49,7 +49,9 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
-        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND (' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
+        'AND (' +
         '  (' +
         '    (c.source IS NULL OR c.source != \'referral\') ' +
         '    AND wo.status IN (\'complete\', \'picked-up\') ' +
@@ -244,6 +246,23 @@ export async function GET(req: Request) {
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'LEFT JOIN shop_equipment se ON se.work_order_id = wo.id ' +
         'WHERE wo.status IN (\'donated\', \'abandoned\') ' +
+        'ORDER BY wo.date_in DESC'
+      )
+      return NextResponse.json(rows)
+    }
+
+    if (type === 'no-charge') {
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, wo.complaint, ' +
+        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
+        'WHERE wo.payment_method = \'no charge\' ' +
+        'GROUP BY wo.id, c.name, c.source, c.referral_shop, e.type, e.make, e.model ' +
         'ORDER BY wo.date_in DESC'
       )
       return NextResponse.json(rows)
