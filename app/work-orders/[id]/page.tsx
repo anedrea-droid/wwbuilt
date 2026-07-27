@@ -808,8 +808,15 @@ export default function WorkOrderDetail() {
               {editing ? (
                 <select value={form.paymentMethod || ''} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
                   className="w-full border rounded px-2 py-1 text-sm">
-                  {['', 'cash', 'check', 'card', 'other'].map(m => (
-                    <option key={m} value={m}>{m || '-'}</option>
+                  {[
+                    { value: '', label: '-' },
+                    { value: 'cash', label: 'Cash' },
+                    { value: 'check', label: 'Check' },
+                    { value: 'card', label: 'Card' },
+                    { value: 'other', label: 'Other' },
+                    { value: 'no charge', label: 'No Charge' },
+                  ].map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
                   ))}
                 </select>
               ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '-'}</p>}
