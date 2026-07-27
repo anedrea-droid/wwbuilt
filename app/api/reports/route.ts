@@ -15,7 +15,7 @@ export async function GET(req: Request) {
         'COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
         'wo.amount_charged, wo.amount_paid, wo.labor_hours, wo.labor_rate, ' +
         'wo.shop_payment_amount, wo.shop_payment_received, wo.status, ' +
-        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
         'wo.commission_paid, wo.commission_paid_date ' +
@@ -26,8 +26,8 @@ export async function GET(req: Request) {
         'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'AND (' +
-        '  ((c.source IS NULL OR c.source != \'referral\') AND wo.status IN (\'complete\', \'picked-up\'))' +
-        '  OR (c.source = \'referral\' AND wo.status IN (\'at-shop\', \'complete\', \'picked-up\'))' +
+        '  ((COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') AND wo.status IN (\'complete\', \'picked-up\'))' +
+        '  OR (COALESCE(wo.source, c.source) = \'referral\' AND wo.status IN (\'at-shop\', \'complete\', \'picked-up\'))' +
         ') ' +
         'GROUP BY wo.id, c.name, c.source, c.referral_shop ' +
         'ORDER BY effective_date DESC',
@@ -40,11 +40,11 @@ export async function GET(req: Request) {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, ' +
         'wo.date_complete, wo.referral_dropoff_date, ' +
-        'c.name as customer_name, c.phone as customer_phone, c.source as customer_source, c.referral_shop, ' +
+        'c.name as customer_name, c.phone as customer_phone, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
-        'CASE WHEN c.source = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
+        'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
         '     ELSE wo.amount_charged END as amount_charged, ' +
-        'CASE WHEN c.source = \'referral\' THEN 0 ' +
+        'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN 0 ' +
         '     ELSE COALESCE(wo.amount_paid, 0) END as amount_paid ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
@@ -53,11 +53,11 @@ export async function GET(req: Request) {
         'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
         'AND (' +
         '  (' +
-        '    (c.source IS NULL OR c.source != \'referral\') ' +
+        '    (COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') ' +
         '    AND wo.status IN (\'complete\', \'picked-up\') ' +
         '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
         '  ) OR (' +
-        '    c.source = \'referral\' ' +
+        '    COALESCE(wo.source, c.source) = \'referral\' ' +
         '    AND wo.referral_dropoff_date IS NOT NULL ' +
         '    AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
         '  )' +
@@ -96,7 +96,7 @@ export async function GET(req: Request) {
         'SELECT wo.id, wo.order_number, wo.amount_charged, wo.status, ' +
         'wo.referral_pickup_date, wo.referral_dropoff_date, ' +
         'wo.shop_payment_received, wo.shop_payment_amount, wo.shop_payment_date, ' +
-        'c.name as customer_name, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
@@ -105,7 +105,7 @@ export async function GET(req: Request) {
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE c.source = \'referral\' ' +
+        'WHERE COALESCE(wo.source, c.source) = \'referral\' ' +
         'AND wo.referral_dropoff_date IS NOT NULL ' +
         'AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
@@ -124,14 +124,14 @@ export async function GET(req: Request) {
           'COALESCE(wo.labor_hours, 0) * COALESCE(wo.labor_rate, 80) * 0.20 AS owes_amount, ' +
           'wo.referral_dropoff_date, wo.complaint, wo.work_done, wo.notes, ' +
           'wo.shop_payment_received, ' +
-          'c.name as customer_name, c.referral_shop, ' +
+          'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
           'e.type as equipment_type, e.make, e.model, ' +
           'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
           'FROM work_orders wo ' +
           'LEFT JOIN customers c ON c.id = wo.customer_id ' +
           'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
           'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-          'WHERE c.source = \'referral\' AND wo.referral_dropoff_date IS NOT NULL ' +
+          'WHERE COALESCE(wo.source, c.source) = \'referral\' AND wo.referral_dropoff_date IS NOT NULL ' +
           'AND wo.status NOT IN (\'donated\', \'abandoned\') '
         const thisTrip = await pool.query(
           baseSelect +
@@ -159,14 +159,14 @@ export async function GET(req: Request) {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.shop_payment_amount, wo.shop_payment_date, wo.amount_charged, ' +
         'wo.labor_hours, wo.labor_rate, ' +
-        'c.name as customer_name, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE c.source = \'referral\' ' +
+        'WHERE COALESCE(wo.source, c.source) = \'referral\' ' +
         'AND wo.shop_payment_received = true ' +
         'AND wo.shop_payment_date::date = $1 ' +
         'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
@@ -182,7 +182,7 @@ export async function GET(req: Request) {
         'wo.referral_pickup_date, wo.referral_dropoff_date, ' +
         'wo.shop_payment_received, wo.shop_payment_amount, wo.shop_payment_date, ' +
         'wo.labor_hours, wo.labor_rate, ' +
-        'c.name as customer_name, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
@@ -191,7 +191,7 @@ export async function GET(req: Request) {
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE c.source = \'referral\' ' +
+        'WHERE COALESCE(wo.source, c.source) = \'referral\' ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
         'ORDER BY wo.created_at DESC'
@@ -204,7 +204,7 @@ export async function GET(req: Request) {
         'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.amount_charged, wo.amount_paid, ' +
         'COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
         'wo.technician, wo.labor_hours, wo.labor_rate, ' +
-        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
         'FROM work_orders wo ' +
@@ -224,7 +224,7 @@ export async function GET(req: Request) {
     if (type === 'open') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.technician, ' +
-        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
@@ -238,7 +238,7 @@ export async function GET(req: Request) {
     if (type === 'donated-abandoned') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.complaint, ' +
-        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, e.serial_number, ' +
         'se.status as shop_status, se.asking_price, se.sale_price, se.sale_date, se.condition_notes ' +
         'FROM work_orders wo ' +
@@ -254,7 +254,7 @@ export async function GET(req: Request) {
     if (type === 'no-charge') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, wo.complaint, ' +
-        'c.name as customer_name, c.source as customer_source, c.referral_shop, ' +
+        'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
         'FROM work_orders wo ' +
@@ -288,7 +288,7 @@ export async function GET(req: Request) {
     if (type === 'parts-report') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, ' +
-        'c.name as customer_name, c.source as customer_source, ' +
+        'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, ' +
         'e.type as equipment_type, e.make, e.model, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
         'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
