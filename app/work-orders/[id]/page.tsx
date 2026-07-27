@@ -61,6 +61,13 @@ export default function WorkOrderDetail() {
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError, setPhotoError] = useState('')
   const [isMobile, setIsMobile] = useState(false)
+  const [referralShops, setReferralShops] = useState<{id:string;name:string}[]>([])
+
+  useEffect(() => {
+    fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setReferralShops(data)
+    })
+  }, [])
 
   useEffect(() => {
     setIsMobile(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))
@@ -123,6 +130,8 @@ export default function WorkOrderDetail() {
     setSaving(true)
     const payload = {
       status: form.status,
+      source: form.source,
+      referral_shop: form.referralShop,
       technician: form.technician,
       complaint: form.complaint,
       diagnosis: form.diagnosis,
@@ -504,6 +513,37 @@ export default function WorkOrderDetail() {
           </div>
           {field('Technician', 'technician')}
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Job Type (this work order)</label>
+            {editing ? (
+              <select value={form.source || woSource || 'own'} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm">
+                <option value="own">Direct Customer</option>
+                <option value="referral">Referral</option>
+              </select>
+            ) : (
+              <p className="text-sm text-gray-800">{woSource === 'referral' ? 'Referral' : 'Direct Customer'}</p>
+            )}
+          </div>
+          {(editing ? form.source : woSource) === 'referral' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Referral Shop (this work order)</label>
+              {editing ? (
+                <select value={form.referralShop || ''} onChange={e => setForm(f => ({ ...f, referralShop: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm">
+                  <option value="">Select shop...</option>
+                  {referralShops.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-800">{woReferralShop || '-'}</p>
+              )}
+            </div>
+          )}
+        </div>
+        <p className="text-[11px] text-gray-400">Overrides this specific work order only - does not change the customer's default classification.</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {field('Date In', 'dateIn', 'date')}
           {field('Date Complete', 'dateComplete', 'date')}
