@@ -50,6 +50,8 @@ export function toWorkOrder(r: Record<string, unknown>) {
     orderNumber: r.order_number,
     customerId: r.customer_id,
     equipmentId: r.equipment_id,
+    source: r.source,
+    referralShop: r.referral_shop,
     status: r.status,
     technician: r.technician,
     complaint: r.complaint,
