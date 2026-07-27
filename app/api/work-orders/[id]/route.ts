@@ -34,6 +34,7 @@ export async function PATCH(
       'referral_pickup_date', 'referral_dropoff_date',
       'shop_payment_amount', 'shop_payment_date', 'shop_payment_received',
       'commission_paid', 'commission_paid_date',
+      'source', 'referral_shop',
     ]
     const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date','commission_paid_date']
     const numericFields = ['labor_hours','labor_rate','amount_charged','amount_paid','shop_payment_amount']
