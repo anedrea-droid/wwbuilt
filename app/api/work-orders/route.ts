@@ -19,7 +19,8 @@ export async function GET(request: Request) {
 
   const { rows: woRows } = await pool.query(
     `SELECT wo.*,
-       c.id as c_id, c.name as c_name, c.phone as c_phone, c.source as c_source, c.referral_shop as c_referral_shop,
+       c.id as c_id, c.name as c_name, c.phone as c_phone,
+       COALESCE(wo.source, c.source) as c_source, COALESCE(wo.referral_shop, c.referral_shop) as c_referral_shop,
        e.id as e_id, e.type as e_type, e.make as e_make, e.model as e_model, e.serial_number as e_serial_number
      FROM work_orders wo
      LEFT JOIN customers c ON wo.customer_id = c.id
@@ -51,6 +52,15 @@ export async function POST(request: Request) {
   const pool = getPool()
   const body = await request.json()
 
+  // Snapshot the customer's CURRENT source/referral shop onto this work order,
+  // so later changes to the customer record never rewrite this job's history.
+  const { rows: custRows } = await pool.query(
+    'SELECT source, referral_shop FROM customers WHERE id = $1',
+    [body.customerId]
+  )
+  const snapshotSource = custRows[0]?.source || 'own'
+  const snapshotReferralShop = custRows[0]?.referral_shop || ''
+
   // Increment order counter
   const { rows: [setting] } = await pool.query(
     `UPDATE settings SET value = (value::int + 1)::text WHERE key = 'order_counter' RETURNING value`
@@ -62,17 +72,18 @@ export async function POST(request: Request) {
     `INSERT INTO work_orders
        (id, order_number, customer_id, equipment_id, status, technician, complaint,
         diagnosis, work_done, labor_hours, labor_rate, date_in, date_complete,
-        date_picked_up, notes, payment_method, amount_charged, amount_paid)
-     VALUES ($1,$2,$3,$4,'pending',$5,$6,'','',0,80,$7,'','', $8,'',0,0)
+        date_picked_up, notes, payment_method, amount_charged, amount_paid, source, referral_shop)
+     VALUES ($1,$2,$3,$4,'pending',$5,$6,'','',0,80,$7,'','', $8,'',0,0,$9,$10)
      RETURNING *`,
     [id, orderNumber, body.customerId, body.equipmentId,
      body.technician || 'Wade', body.complaint || '', body.dateIn || new Date().toISOString().split('T')[0],
-     body.notes || '']
+     body.notes || '', snapshotSource, snapshotReferralShop]
   )
 
   // Fetch joined data
   const { rows: joined } = await pool.query(
-    `SELECT wo.*, c.id as c_id, c.name as c_name, c.phone as c_phone, c.source as c_source, c.referral_shop as c_referral_shop,
+    `SELECT wo.*, c.id as c_id, c.name as c_name, c.phone as c_phone,
+       COALESCE(wo.source, c.source) as c_source, COALESCE(wo.referral_shop, c.referral_shop) as c_referral_shop,
        e.id as e_id, e.type as e_type, e.make as e_make, e.model as e_model
      FROM work_orders wo
      LEFT JOIN customers c ON wo.customer_id = c.id
