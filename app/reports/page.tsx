@@ -248,7 +248,7 @@ export default function ReportsPage() {
         <div className="space-y-5">
 
           {/* Payout Summary */}
-          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Unpaid work appears under Outstanding Invoices below.">
+          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Jobs from 2026-07-30 onward pay 100% to whoever is assigned; jobs before that date still split 60/40 Wade/Wayne to match how they were actually paid out.">
             {payouts.length === 0 ? <Empty /> : (() => {
               const totalPartsCostAll = payouts.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
 
@@ -263,30 +263,46 @@ export default function ReportsPage() {
                 const afterParts = paidAmount - partsCharged
                 const refCut = isRef && afterParts > 0 ? afterParts * 0.20 : 0
                 const net = afterParts - refCut
-                const wade = net * 0.60
-                const wayne = net * 0.40
-                return { paidAmount, partsCharged, afterParts, refCut, net, wade, wayne, isPaid }
+                return { paidAmount, partsCharged, afterParts, refCut, net, isPaid }
               }
 
               const inHouse = payouts.filter(r => r.customer_source !== 'referral' && calcRow(r, false).isPaid)
               const referral = payouts.filter(r => r.customer_source === 'referral' && calcRow(r, true).isPaid)
 
+              // Per-technician payout method changed on 2026-07-30: jobs completed/paid
+              // before that date still split 60/40 (matching how they were actually paid
+              // out in real life); jobs from that date forward pay 100% to whoever is assigned.
+              const SPLIT_CUTOVER_DATE = '2026-07-30'
+
               const sumRows = (rows: Record<string, unknown>[], isRef: boolean) => {
-                let revenue = 0, parts = 0, partsCost = 0, shopCut = 0, net = 0, wade = 0, wayne = 0
+                let revenue = 0, parts = 0, partsCost = 0, shopCut = 0, net = 0
+                const byTech: Record<string, number> = {}
                 rows.forEach(row => {
                   const c = calcRow(row, isRef)
                   revenue += c.paidAmount; parts += c.partsCharged; shopCut += c.refCut
-                  net += c.net; wade += c.wade; wayne += c.wayne
+                  net += c.net
                   partsCost += Number(row.parts_cost) || 0
+                  const effDate = row.effective_date ? String(row.effective_date).slice(0, 10) : ''
+                  if (effDate && effDate < SPLIT_CUTOVER_DATE) {
+                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.60
+                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.40
+                  } else {
+                    const tech = String(row.technician || 'Unassigned')
+                    byTech[tech] = (byTech[tech] || 0) + c.net
+                  }
                 })
-                return { revenue, parts, partsCost, shopCut, net, wade, wayne }
+                return { revenue, parts, partsCost, shopCut, net, byTech }
               }
 
               const ihTotals = sumRows(inHouse, false)
               const refTotals = sumRows(referral, true)
               const totalPaid = ihTotals.revenue + refTotals.revenue
 
-              const tbl = (rows: Record<string, unknown>[], isRef: boolean, totals: { revenue: number; parts: number; shopCut: number; net: number; wade: number; wayne: number }) => (
+              const combinedByTech: Record<string, number> = {}
+              for (const [tech, amt] of Object.entries(ihTotals.byTech)) combinedByTech[tech] = (combinedByTech[tech] || 0) + amt
+              for (const [tech, amt] of Object.entries(refTotals.byTech)) combinedByTech[tech] = (combinedByTech[tech] || 0) + amt
+
+              const tbl = (rows: Record<string, unknown>[], isRef: boolean, totals: { revenue: number; parts: number; shopCut: number; net: number }) => (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -295,12 +311,11 @@ export default function ReportsPage() {
                         <th className="pb-2 pr-3">Customer</th>
                         <th className="pb-2 pr-3">Date</th>
                         {isRef && <th className="pb-2 pr-3">Shop</th>}
+                        <th className="pb-2 pr-3">Technician</th>
                         <th className="pb-2 pr-3 text-right">Amount Paid</th>
                         <th className="pb-2 pr-3 text-right">Parts Chg</th>
                         {isRef && <th className="pb-2 pr-3 text-right">Shop 20%</th>}
-                        <th className="pb-2 pr-3 text-right">Net Split</th>
-                        <th className="pb-2 pr-3 text-right text-orange-600">Wade</th>
-                        <th className="pb-2 text-right text-blue-600">Wayne</th>
+                        <th className="pb-2 text-right">Net Earned</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -316,25 +331,29 @@ export default function ReportsPage() {
                             <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
                             <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.effective_date ?? row.date_complete)}</td>
                             {isRef && <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.referral_shop || '-')}</td>}
+                            <td className="py-1.5 pr-3">
+                              <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
+                                {String(row.technician || 'Unassigned')}
+                              </span>
+                              {(row.effective_date ? String(row.effective_date).slice(0, 10) : '') < '2026-07-30' && (
+                                <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
+                              )}
+                            </td>
                             <td className="py-1.5 pr-3 text-right">{fmt(c.paidAmount)}</td>
                             <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
                             {isRef && <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.refCut)}</td>}
-                            <td className="py-1.5 pr-3 text-right">{fmt(c.net)}</td>
-                            <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{fmt(c.wade)}</td>
-                            <td className="py-1.5 text-right text-blue-600 font-medium">{fmt(c.wayne)}</td>
+                            <td className="py-1.5 text-right font-medium">{fmt(c.net)}</td>
                           </tr>
                         )
                       })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 font-semibold text-sm">
-                        <td className="pt-2 text-gray-500" colSpan={isRef ? 4 : 3}>Subtotal</td>
+                        <td className="pt-2 text-gray-500" colSpan={isRef ? 5 : 4}>Subtotal</td>
                         <td className="pt-2 text-right">{fmt(totals.revenue)}</td>
                         <td className="pt-2 text-right text-gray-600">{totals.parts > 0 ? fmt(totals.parts) : '-'}</td>
                         {isRef && <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>}
                         <td className="pt-2 text-right">{fmt(totals.net)}</td>
-                        <td className="pt-2 text-right text-orange-600">{fmt(totals.wade)}</td>
-                        <td className="pt-2 text-right text-blue-600">{fmt(totals.wayne)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -378,14 +397,14 @@ export default function ReportsPage() {
                     </div>
                     <div className="bg-orange-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-orange-600 mb-1">Wade Total</div>
-                      <div className="font-bold text-orange-600">{fmt(ihTotals.wade + refTotals.wade)}</div>
+                      <div className="font-bold text-orange-600">{fmt(combinedByTech['Wade'] || 0)}</div>
                     </div>
                     <div className="bg-blue-50 rounded-lg p-3 text-center">
                       <div className="text-xs text-blue-600 mb-1">Wayne Total</div>
-                      <div className="font-bold text-blue-600">{fmt(ihTotals.wayne + refTotals.wayne)}</div>
+                      <div className="font-bold text-blue-600">{fmt(combinedByTech['Wayne'] || 0)}</div>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400">Total Spent (Parts) includes every completed job in this date range, whether paid or not. Total Paid, Wade, and Wayne totals only include jobs actually paid.</p>
+                  <p className="text-xs text-gray-400">Total Spent (Parts) includes every completed job in this date range, whether paid or not. Wade and Wayne totals show what each tech earned from the jobs assigned to them - no splitting between them.</p>
                 </div>
               )
             })()}
