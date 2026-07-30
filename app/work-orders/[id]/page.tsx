@@ -1047,9 +1047,14 @@ export default function WorkOrderDetail() {
           const isReferral = woSource === 'referral'
           const afterParts = invoice - partsChargeTotal
           const referralCut = isReferral ? afterParts * 0.20 : 0
-          const netToSplit = afterParts - referralCut
-          const wadePayout = netToSplit * 0.60
-          const waynePayout = netToSplit * 0.40
+          const netEarned = afterParts - referralCut
+          // Payout method changed 2026-07-30: jobs completed/paid before that date still
+          // split 60/40 (matching how they were actually paid out); jobs from that date
+          // forward pay 100% to whoever is assigned.
+          const effDate = wo.dateComplete || wo.referralDropoffDate || wo.dateIn || ''
+          const useOldSplit = effDate && String(effDate).slice(0, 10) < '2026-07-30'
+          const wadePayout = netEarned * 0.60
+          const waynePayout = netEarned * 0.40
           return (
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -1070,18 +1075,27 @@ export default function WorkOrderDetail() {
                 </div>
               )}
               <div className="flex justify-between font-semibold border-t pt-2">
-                <span>Net to Split</span>
-                <span>${netToSplit.toFixed(2)}</span>
+                <span>Net Earned</span>
+                <span>${netEarned.toFixed(2)}</span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-                <div className="flex justify-between text-orange-700">
-                  <span>Wade (60%)</span>
-                  <span className="font-semibold">${wadePayout.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-blue-700">
-                  <span>Wayne (40%)</span>
-                  <span className="font-semibold">${waynePayout.toFixed(2)}</span>
-                </div>
+                {useOldSplit ? (
+                  <>
+                    <div className="flex justify-between text-orange-700">
+                      <span>Wade (60%)</span>
+                      <span className="font-semibold">${wadePayout.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Wayne (40%)</span>
+                      <span className="font-semibold">${waynePayout.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className={'flex justify-between font-semibold ' + (wo.technician === 'Wade' ? 'text-orange-700' : wo.technician === 'Wayne' ? 'text-blue-700' : 'text-gray-700')}>
+                    <span>Goes to: {wo.technician || 'Unassigned'}</span>
+                    <span>${netEarned.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
               {estimatedTotal === 0 && invoice === 0 && (
                 <p className="text-xs text-gray-400 italic">Using Estimated Total. Enter Amount Charged to override.</p>
