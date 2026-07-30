@@ -662,7 +662,7 @@ export default function WorkOrderDetail() {
                 <label className="text-xs text-gray-500">Our Cost ($)</label>
                 <input type="number" value={newPart.cost} onChange={e => {
                     const costVal = e.target.value
-                    const auto = costVal ? (Number(costVal) * 1.3).toFixed(2) : ''
+                    const auto = costVal ? (Math.ceil((Number(costVal) * 1.5) / 5) * 5).toFixed(2) : ''
                     setNewPart(p => ({ ...p, cost: costVal, price: auto }))
                   }}
                   className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
@@ -671,7 +671,7 @@ export default function WorkOrderDetail() {
                 <label className="text-xs text-gray-500">Charge Customer ($)</label>
                 <input type="number" value={newPart.price} onChange={e => setNewPart(p => ({ ...p, price: e.target.value }))}
                   className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
-                <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled at 1.3x cost, editable</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled at 1.5x cost, rounded up to the nearest $5, editable</p>
               </div>
               {!newPart.fromShop && (
                 <div>
@@ -724,7 +724,7 @@ export default function WorkOrderDetail() {
                         <label className="text-xs text-gray-500">Our Cost ($)</label>
                         <input type="number" value={partForm.cost || ''} onChange={e => {
                             const costVal = e.target.value
-                            const auto = costVal ? Number((Number(costVal) * 1.3).toFixed(2)) : 0
+                            const auto = costVal ? Math.ceil((Number(costVal) * 1.5) / 5) * 5 : 0
                             setPartForm(f => ({ ...f, cost: Number(costVal), price: auto }))
                           }}
                           className="w-full border rounded px-2 py-1 text-sm" step="0.01" />
@@ -733,7 +733,7 @@ export default function WorkOrderDetail() {
                         <label className="text-xs text-gray-500">Charge Customer ($)</label>
                         <input type="number" value={partForm.price || ''} onChange={e => setPartForm(f => ({ ...f, price: Number(e.target.value) }))}
                           className="w-full border rounded px-2 py-1 text-sm" step="0.01" />
-                        <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled at 1.3x cost, editable</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled at 1.5x cost, rounded up to the nearest $5, editable</p>
                       </div>
                     </div>
                     <div className="flex gap-2">
