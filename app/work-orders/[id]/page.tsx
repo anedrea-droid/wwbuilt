@@ -60,6 +60,17 @@ export default function WorkOrderDetail() {
   const [photos, setPhotos] = useState<{id:string;url:string;public_id:string}[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError, setPhotoError] = useState('')
+  const [contactLog, setContactLog] = useState<{id:string;type:string;createdAt:string}[]>([])
+
+  function logContact(type: 'call' | 'text') {
+    fetch('/api/contact-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workOrderId: id, customerId: customer?.id, type }),
+    }).then(() => {
+      fetch('/api/contact-log?workOrderId=' + id).then(r => r.json()).then(d => setContactLog(Array.isArray(d) ? d : []))
+    }).catch(() => {})
+  }
   const [isMobile, setIsMobile] = useState(false)
   const [referralShops, setReferralShops] = useState<{id:string;name:string}[]>([])
 
@@ -84,6 +95,7 @@ export default function WorkOrderDetail() {
 
   useEffect(() => {
     fetch('/api/work-orders/' + id + '/photos').then(r => r.json()).then(d => setPhotos(Array.isArray(d) ? d : []))
+    fetch('/api/contact-log?workOrderId=' + id).then(r => r.json()).then(d => setContactLog(Array.isArray(d) ? d : []))
     fetch('/api/work-orders/' + id)
       .then(r => r.json()).then(data => { const n = normalizeDates(data); setWo(n); setForm(n) })
     fetch('/api/parts?workOrderId=' + id)
@@ -316,6 +328,7 @@ export default function WorkOrderDetail() {
 
     const digits = customer.phone.replace(/[^0-9+]/g, '')
     const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?'
+    logContact('text')
     window.location.href = 'sms:' + digits + separator + 'body=' + encodeURIComponent(message)
   }
 
@@ -458,7 +471,7 @@ export default function WorkOrderDetail() {
             <>
               <p className="font-medium">{customer.name}</p>
               {customer.phone && (
-                <a href={'tel:' + customer.phone.replace(/[^0-9+]/g, '')} className="text-sm text-orange-600 hover:underline">
+                <a href={'tel:' + customer.phone.replace(/[^0-9+]/g, '')} onClick={() => logContact('call')} className="text-sm text-orange-600 hover:underline">
                   {customer.phone}
                 </a>
               )}
@@ -484,6 +497,22 @@ export default function WorkOrderDetail() {
           ) : <p className="text-sm text-gray-400">Loading...</p>}
         </div>
       </div>
+
+      {contactLog.length > 0 && (
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-gray-700 mb-2 text-sm">Contact History</h2>
+          <div className="space-y-1">
+            {contactLog.slice(0, 5).map(c => (
+              <div key={c.id} className="flex items-center gap-2 text-xs text-gray-500">
+                <span className={'px-1.5 py-0.5 rounded font-medium ' + (c.type === 'call' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')}>
+                  {c.type === 'call' ? 'Called' : 'Texted'}
+                </span>
+                <span>{new Date(c.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow p-4 space-y-4">
         <div className="flex items-center justify-between">
