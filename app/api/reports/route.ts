@@ -13,7 +13,7 @@ export async function GET(req: Request) {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_complete, wo.referral_dropoff_date, wo.date_in, ' +
         'COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
-        'wo.amount_charged, wo.amount_paid, wo.labor_hours, wo.labor_rate, ' +
+        'wo.amount_charged, wo.amount_paid, wo.labor_hours, wo.labor_rate, wo.technician, ' +
         'wo.shop_payment_amount, wo.shop_payment_received, wo.status, ' +
         'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
@@ -158,10 +158,11 @@ export async function GET(req: Request) {
       const settleDate = searchParams.get('date') || new Date().toISOString().slice(0, 10)
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.shop_payment_amount, wo.shop_payment_date, wo.amount_charged, ' +
-        'wo.labor_hours, wo.labor_rate, ' +
+        'wo.labor_hours, wo.labor_rate, wo.technician, wo.date_complete, wo.referral_dropoff_date, wo.date_in, ' +
         'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
-        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged, ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
