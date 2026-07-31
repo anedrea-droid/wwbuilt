@@ -556,8 +556,10 @@ export default function ReportsPage() {
             ) : settleData.length === 0 ? (
               <Empty />
             ) : (() => {
+              const SPLIT_CUTOVER_DATE = '2026-07-30'
               const calc = (row: Record<string, unknown>) => {
                 const partsCharged = Number(row.parts_charged) || 0
+                const partsCost = Number(row.parts_cost) || 0
                 const shopAmt = Number(row.shop_payment_amount) || 0
                 const amtCharged = Number(row.amount_charged) || 0
                 const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
@@ -565,17 +567,25 @@ export default function ReportsPage() {
                 const afterParts = paid - partsCharged
                 const shopCut = afterParts > 0 ? afterParts * 0.20 : 0
                 const net = afterParts - shopCut
-                const wade = net * 0.60
-                const wayne = net * 0.40
-                return { paid, partsCharged, shopCut, wade, wayne }
+                const effDate = row.date_complete || row.referral_dropoff_date || row.date_in || ''
+                const useOldSplit = effDate && String(effDate).slice(0, 10) < SPLIT_CUTOVER_DATE
+                return { paid, partsCharged, partsCost, shopCut, net, useOldSplit }
               }
-              const totals = settleData.reduce((acc: { paid: number; parts: number; shopCut: number; wade: number; wayne: number }, row) => {
+              const totals = settleData.reduce((acc: { paid: number; parts: number; partsCost: number; shopCut: number; byTech: Record<string, number> }, row) => {
                 const c = calc(row)
+                if (c.useOldSplit) {
+                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.60
+                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.40
+                } else {
+                  const tech = String(row.technician || 'Unassigned')
+                  acc.byTech[tech] = (acc.byTech[tech] || 0) + c.net
+                }
                 return {
                   paid: acc.paid + c.paid, parts: acc.parts + c.partsCharged,
-                  shopCut: acc.shopCut + c.shopCut, wade: acc.wade + c.wade, wayne: acc.wayne + c.wayne,
+                  partsCost: acc.partsCost + c.partsCost, shopCut: acc.shopCut + c.shopCut,
+                  byTech: acc.byTech,
                 }
-              }, { paid: 0, parts: 0, shopCut: 0, wade: 0, wayne: 0 })
+              }, { paid: 0, parts: 0, partsCost: 0, shopCut: 0, byTech: {} })
               return (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -583,11 +593,12 @@ export default function ReportsPage() {
                       <tr className="text-left text-gray-500 border-b text-xs uppercase">
                         <th className="pb-2 pr-3">WO#</th>
                         <th className="pb-2 pr-3">Customer</th>
+                        <th className="pb-2 pr-3">Technician</th>
                         <th className="pb-2 pr-3 text-right">Amount Paid</th>
                         <th className="pb-2 pr-3 text-right">Parts Chg to Customer</th>
+                        <th className="pb-2 pr-3 text-right">Actual Part Cost</th>
                         <th className="pb-2 pr-3 text-right">To Referral Shop</th>
-                        <th className="pb-2 pr-3 text-right text-orange-600">Wade</th>
-                        <th className="pb-2 text-right text-blue-600">Wayne</th>
+                        <th className="pb-2 text-right">Net Earned</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -601,23 +612,39 @@ export default function ReportsPage() {
                               </Link>
                             </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                            <td className="py-1.5 pr-3">
+                              <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
+                                {String(row.technician || 'Unassigned')}
+                              </span>
+                              {c.useOldSplit && (
+                                <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
+                              )}
+                            </td>
                             <td className="py-1.5 pr-3 text-right font-medium">{fmt(c.paid)}</td>
                             <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
+                            <td className="py-1.5 pr-3 text-right text-red-500">{c.partsCost > 0 ? fmt(c.partsCost) : '-'}</td>
                             <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.shopCut)}</td>
-                            <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{fmt(c.wade)}</td>
-                            <td className="py-1.5 text-right text-blue-600 font-medium">{fmt(c.wayne)}</td>
+                            <td className="py-1.5 text-right font-medium">{fmt(c.net)}</td>
                           </tr>
                         )
                       })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 font-semibold">
-                        <td colSpan={2} className="pt-2 text-gray-600">Grand Totals ({settleData.length} WO{settleData.length !== 1 ? 's' : ''})</td>
+                        <td colSpan={3} className="pt-2 text-gray-600">Grand Totals ({settleData.length} WO{settleData.length !== 1 ? 's' : ''})</td>
                         <td className="pt-2 text-right">{fmt(totals.paid)}</td>
                         <td className="pt-2 text-right text-gray-600">{fmt(totals.parts)}</td>
+                        <td className="pt-2 text-right text-red-600">{fmt(totals.partsCost)}</td>
                         <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>
-                        <td className="pt-2 text-right text-orange-600">{fmt(totals.wade)}</td>
-                        <td className="pt-2 text-right text-blue-600">{fmt(totals.wayne)}</td>
+                        <td className="pt-2 text-right">-</td>
+                      </tr>
+                      <tr>
+                        <td colSpan={8} className="pt-2">
+                          <div className="flex gap-4 justify-end text-sm font-semibold">
+                            <span className="text-orange-600">Wade: {fmt(totals.byTech['Wade'] || 0)}</span>
+                            <span className="text-blue-600">Wayne: {fmt(totals.byTech['Wayne'] || 0)}</span>
+                          </div>
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
