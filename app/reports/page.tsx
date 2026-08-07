@@ -286,6 +286,11 @@ export default function ReportsPage() {
                   if (effDate && effDate < SPLIT_CUTOVER_DATE) {
                     byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.60
                     byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.40
+                  } else if (row.technician === 'Wade') {
+                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net
+                  } else if (row.technician === 'Wayne') {
+                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.70
+                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.30
                   } else if (row.technician === 'Both') {
                     byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.50
                     byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.50
@@ -579,6 +584,11 @@ export default function ReportsPage() {
                 if (c.useOldSplit) {
                   acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.60
                   acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.40
+                } else if (row.technician === 'Wade') {
+                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net
+                } else if (row.technician === 'Wayne') {
+                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.70
+                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.30
                 } else if (row.technician === 'Both') {
                   acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.50
                   acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.50
