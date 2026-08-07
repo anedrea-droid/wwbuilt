@@ -1141,9 +1141,25 @@ export default function WorkOrderDetail() {
                       <span className="font-semibold">${(netEarned * 0.5).toFixed(2)}</span>
                     </div>
                   </>
+                ) : wo.technician === 'Wayne' ? (
+                  <>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Wayne (70%)</span>
+                      <span className="font-semibold">${(netEarned * 0.70).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-orange-700">
+                      <span>Wade (30%)</span>
+                      <span className="font-semibold">${(netEarned * 0.30).toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : wo.technician === 'Wade' ? (
+                  <div className="flex justify-between font-semibold text-orange-700">
+                    <span>Wade (100%)</span>
+                    <span>${netEarned.toFixed(2)}</span>
+                  </div>
                 ) : (
-                  <div className={'flex justify-between font-semibold ' + (wo.technician === 'Wade' ? 'text-orange-700' : wo.technician === 'Wayne' ? 'text-blue-700' : 'text-gray-700')}>
-                    <span>Goes to: {wo.technician || 'Unassigned'}</span>
+                  <div className="flex justify-between font-semibold text-gray-700">
+                    <span>Goes to: Unassigned</span>
                     <span>${netEarned.toFixed(2)}</span>
                   </div>
                 )}
