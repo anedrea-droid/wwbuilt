@@ -540,7 +540,18 @@ export default function WorkOrderDetail() {
               </select>
             ) : <p className="text-sm text-gray-800 capitalize">{wo.status}</p>}
           </div>
-          {field('Technician', 'technician')}
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Technician</label>
+            {editing ? (
+              <select value={form.technician || ''} onChange={e => setForm(f => ({ ...f, technician: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm">
+                <option value="">-</option>
+                <option value="Wade">Wade</option>
+                <option value="Wayne">Wayne</option>
+                <option value="Both">Both</option>
+              </select>
+            ) : <p className="text-sm text-gray-800">{wo.technician || '-'}</p>}
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -1117,6 +1128,17 @@ export default function WorkOrderDetail() {
                     <div className="flex justify-between text-blue-700">
                       <span>Wayne (40%)</span>
                       <span className="font-semibold">${waynePayout.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : wo.technician === 'Both' ? (
+                  <>
+                    <div className="flex justify-between text-orange-700">
+                      <span>Wade (50% - Both assigned)</span>
+                      <span className="font-semibold">${(netEarned * 0.5).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Wayne (50% - Both assigned)</span>
+                      <span className="font-semibold">${(netEarned * 0.5).toFixed(2)}</span>
                     </div>
                   </>
                 ) : (
