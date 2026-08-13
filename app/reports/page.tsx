@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 const PRINT_STYLES = '@media print { nav { display: none !important; } .print\\:hidden { display: none !important; } body { background: white !important; } }'
 
@@ -47,14 +48,30 @@ function daysOpen(dateIn: unknown) {
   return diff >= 0 ? diff : null
 }
 
-export default function ReportsPage() {
-  const [tab, setTab] = useState<ReportTab>('financial')
+function ReportsPageInner() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = today.slice(0, 8) + '01'
 
-  const [fromDate, setFromDate] = useState(firstOfMonth)
-  const [toDate, setToDate] = useState(today)
+  const validTabs: ReportTab[] = ['financial', 'referral', 'workorders', 'parts']
+  const initialTab = (searchParams.get('tab') as ReportTab) || 'financial'
+  const [tab, setTab] = useState<ReportTab>(validTabs.includes(initialTab) ? initialTab : 'financial')
+
+  const [fromDate, setFromDate] = useState(searchParams.get('from') || firstOfMonth)
+  const [toDate, setToDate] = useState(searchParams.get('to') || today)
+
+  // Keep the URL in sync with the current tab/date range so browser back/forward
+  // (and links here from work orders) return to the exact report you were viewing,
+  // instead of resetting to the default tab and date range.
+  useEffect(() => {
+    const params = new URLSearchParams()
+    params.set('tab', tab)
+    params.set('from', fromDate)
+    params.set('to', toDate)
+    router.replace('/reports?' + params.toString(), { scroll: false })
+  }, [tab, fromDate, toDate, router])
 
   const [payouts, setPayouts] = useState<Record<string, unknown>[]>([])
   const [outstanding, setOutstanding] = useState<Record<string, unknown>[]>([])
@@ -1257,5 +1274,13 @@ export default function ReportsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-400">Loading...</div>}>
+      <ReportsPageInner />
+    </Suspense>
   )
 }
