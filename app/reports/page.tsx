@@ -93,37 +93,78 @@ function ReportsPageInner() {
   const [partsReport, setPartsReport] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(false)
 
+  function groupByShop(rows: Record<string, unknown>[]): Record<string, Record<string, unknown>[]> {
+    const groups: Record<string, Record<string, unknown>[]> = {}
+    rows.forEach(r => {
+      const shop = String(r.referral_shop || 'Other Shop')
+      if (!groups[shop]) groups[shop] = []
+      groups[shop].push(r)
+    })
+    return groups
+  }
+
   function printTrip() {
     if (!tripData) return
     const fmtD = (d: unknown) => d ? String(d).slice(0, 10) : '-'
     const fmtM = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
-    const rows1 = tripData.thisTrip.map(r => {
-      const inv = Number(r.amount_charged) || 0
-      const owes = (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 0) * 0.20
-      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
-    }).join('')
-    const rows2 = tripData.outstanding.map(r => {
-      const inv = Number(r.amount_charged) || 0
-      const owes = (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 0) * 0.20
-      return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
-    }).join('')
     const calcInv = (r: Record<string,unknown>) => { const sa = Number(r.shop_payment_amount)||0; return sa > 0 ? sa : (Number(r.amount_charged)||0) }
     const calcOwes = (r: Record<string,unknown>) => { return (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20 }
+
+    const thisTripByShop = groupByShop(tripData.thisTrip)
+    const outstandingByShop = groupByShop(tripData.outstanding)
+    const allShops = Array.from(new Set([...Object.keys(thisTripByShop), ...Object.keys(outstandingByShop)])).sort()
+
     const tot1 = tripData.thisTrip.reduce((s, r) => s + calcOwes(r), 0)
     const tot2 = tripData.outstanding.reduce((s, r) => s + calcOwes(r), 0)
-    const invTot1 = tripData.thisTrip.reduce((s, r) => s + calcInv(r), 0)
-    const invTot2 = tripData.outstanding.reduce((s, r) => s + calcInv(r), 0)
+
     const w = window.open('', '_blank')
     if (!w) return
-    w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin-bottom:8px;table-layout:fixed}th{text-align:left;border-bottom:2px solid #333;padding:4px 6px 4px 0;font-size:11px;text-transform:uppercase;overflow:hidden}td{padding:4px 6px 4px 0;border-bottom:1px solid #eee;vertical-align:top;overflow:hidden;word-break:break-word}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}@media print{button{display:none}}</style></head><body>')
+    w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}h3{font-size:13px;margin:12px 0 4px;color:#1d4ed8}table{width:100%;border-collapse:collapse;margin-bottom:6px;table-layout:fixed}th{text-align:left;border-bottom:2px solid #333;padding:4px 6px 4px 0;font-size:11px;text-transform:uppercase;overflow:hidden}td{padding:4px 6px 4px 0;border-bottom:1px solid #eee;vertical-align:top;overflow:hidden;word-break:break-word}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}.shop-total{font-size:11px;color:#444;margin-bottom:14px;text-align:right}@media print{button{display:none}}</style></head><body>')
     w.document.write('<h1>WW Small Engine - Shop Trip Sheet</h1>')
-    w.document.write('<p>Referral Shop: Seguin Small Engine &nbsp;&nbsp; Date: ' + tripData.tripDate + '</p>')
+    w.document.write('<p>Date: ' + tripData.tripDate + '</p>')
     w.document.write('<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">Print</button>')
+
     w.document.write('<h2>Dropping Off Today (' + tripData.thisTrip.length + ' items)</h2>')
-    w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Work Done / Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rows1 + '</tbody><tfoot><tr><td colspan="4"></td><td class="right">$' + invTot1.toFixed(2) + '</td><td class="right orange">$' + tot1.toFixed(2) + '</td></tr></tfoot></table>')
+    if (tripData.thisTrip.length === 0) {
+      w.document.write('<p style="color:#888;font-style:italic;">No drop-offs recorded for this date.</p>')
+    } else {
+      allShops.forEach(shop => {
+        const rows = thisTripByShop[shop]
+        if (!rows || rows.length === 0) return
+        const shopInv = rows.reduce((s, r) => s + calcInv(r), 0)
+        const shopOwes = rows.reduce((s, r) => s + calcOwes(r), 0)
+        const rowsHtml = rows.map(r => {
+          const inv = Number(r.amount_charged) || 0
+          const owes = calcOwes(r)
+          return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
+        }).join('')
+        w.document.write('<h3>' + shop + '</h3>')
+        w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Work Done / Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>')
+        w.document.write('<div class="shop-total">' + shop + ' subtotal - Invoice: $' + shopInv.toFixed(2) + ' &nbsp;|&nbsp; WW Owes: $' + shopOwes.toFixed(2) + '</div>')
+      })
+    }
+
     w.document.write('<h2>Previously Returned - Awaiting Shop Payment (' + tripData.outstanding.length + ' items)</h2>')
-    w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Returned</th><th>Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rows2 + '</tbody><tfoot><tr><td colspan="5"></td><td class="right">$' + invTot2.toFixed(2) + '</td><td class="right orange">$' + tot2.toFixed(2) + '</td></tr></tfoot></table>')
-    w.document.write('<p style="margin-top:20px;font-size:11px;color:#666">Combined WW Owes: $' + (tot1 + tot2).toFixed(2) + '</p>')
+    if (tripData.outstanding.length === 0) {
+      w.document.write('<p style="color:#888;font-style:italic;">Nothing outstanding.</p>')
+    } else {
+      allShops.forEach(shop => {
+        const rows = outstandingByShop[shop]
+        if (!rows || rows.length === 0) return
+        const shopInv = rows.reduce((s, r) => s + calcInv(r), 0)
+        const shopOwes = rows.reduce((s, r) => s + calcOwes(r), 0)
+        const rowsHtml = rows.map(r => {
+          const inv = Number(r.amount_charged) || 0
+          const owes = calcOwes(r)
+          return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
+        }).join('')
+        w.document.write('<h3>' + shop + '</h3>')
+        w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Returned</th><th>Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>')
+        w.document.write('<div class="shop-total">' + shop + ' subtotal - Invoice: $' + shopInv.toFixed(2) + ' &nbsp;|&nbsp; WW Owes: $' + shopOwes.toFixed(2) + '</div>')
+      })
+    }
+
+    w.document.write('<p style="margin-top:20px;font-size:13px;font-weight:bold;color:#333">Combined WW Owes (All Shops): $' + (tot1 + tot2).toFixed(2) + '</p>')
     w.document.write('</body></html>')
     w.document.close()
   }
@@ -599,90 +640,143 @@ function ReportsPageInner() {
                 const net = afterParts - shopCut
                 return { paid, partsCharged, partsCost, shopCut, net, useOldSplit }
               }
-              const totals = settleData.reduce((acc: { paid: number; parts: number; partsCost: number; shopCut: number; byTech: Record<string, number> }, row) => {
-                const c = calc(row)
+              const addToByTech = (byTech: Record<string, number>, row: Record<string, unknown>, c: { net: number; useOldSplit: boolean }) => {
                 if (c.useOldSplit) {
-                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.60
-                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.40
+                  byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.60
+                  byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.40
                 } else if (row.technician === 'Wade') {
-                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net
+                  byTech['Wade'] = (byTech['Wade'] || 0) + c.net
                 } else if (row.technician === 'Wayne') {
-                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net
+                  byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net
                 } else if (row.technician === 'Both') {
-                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.50
-                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.50
+                  byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.50
+                  byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.50
                 } else {
                   const tech = String(row.technician || 'Unassigned')
-                  acc.byTech[tech] = (acc.byTech[tech] || 0) + c.net
+                  byTech[tech] = (byTech[tech] || 0) + c.net
                 }
-                return {
-                  paid: acc.paid + c.paid, parts: acc.parts + c.partsCharged,
-                  partsCost: acc.partsCost + c.partsCost, shopCut: acc.shopCut + c.shopCut,
-                  byTech: acc.byTech,
-                }
-              }, { paid: 0, parts: 0, partsCost: 0, shopCut: 0, byTech: {} })
+              }
+
+              const shopGroups: Record<string, Record<string, unknown>[]> = {}
+              settleData.forEach(row => {
+                const shop = String(row.referral_shop || 'Other Shop')
+                if (!shopGroups[shop]) shopGroups[shop] = []
+                shopGroups[shop].push(row)
+              })
+
+              const grandTotals = { paid: 0, parts: 0, partsCost: 0, shopCut: 0, byTech: {} as Record<string, number> }
+              settleData.forEach(row => {
+                const c = calc(row)
+                grandTotals.paid += c.paid; grandTotals.parts += c.partsCharged
+                grandTotals.partsCost += c.partsCost; grandTotals.shopCut += c.shopCut
+                addToByTech(grandTotals.byTech, row, c)
+              })
+
               return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                        <th className="pb-2 pr-3">WO#</th>
-                        <th className="pb-2 pr-3">Customer</th>
-                        <th className="pb-2 pr-3">Technician</th>
-                        <th className="pb-2 pr-3 text-right">Amount Paid</th>
-                        <th className="pb-2 pr-3 text-right">Parts Chg to Customer</th>
-                        <th className="pb-2 pr-3 text-right">Actual Part Cost</th>
-                        <th className="pb-2 pr-3 text-right">To Referral Shop</th>
-                        <th className="pb-2 text-right">Net Earned</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {settleData.map(row => {
-                        const c = calc(row)
-                        return (
-                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                            <td className="py-1.5 pr-3">
-                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                {String(row.order_number)}
-                              </Link>
-                            </td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                            <td className="py-1.5 pr-3">
-                              <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
-                                {String(row.technician || 'Unassigned')}
-                              </span>
-                              {c.useOldSplit && (
-                                <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
-                              )}
-                            </td>
-                            <td className="py-1.5 pr-3 text-right font-medium">{fmt(c.paid)}</td>
-                            <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
-                            <td className="py-1.5 pr-3 text-right text-red-500">{c.partsCost > 0 ? fmt(c.partsCost) : '-'}</td>
-                            <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.shopCut)}</td>
-                            <td className="py-1.5 text-right font-medium">{fmt(c.net)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 font-semibold">
-                        <td colSpan={3} className="pt-2 text-gray-600">Grand Totals ({settleData.length} WO{settleData.length !== 1 ? 's' : ''})</td>
-                        <td className="pt-2 text-right">{fmt(totals.paid)}</td>
-                        <td className="pt-2 text-right text-gray-600">{fmt(totals.parts)}</td>
-                        <td className="pt-2 text-right text-red-600">{fmt(totals.partsCost)}</td>
-                        <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>
-                        <td className="pt-2 text-right">-</td>
-                      </tr>
-                      <tr>
-                        <td colSpan={8} className="pt-2">
-                          <div className="flex gap-4 justify-end text-sm font-semibold">
-                            <span className="text-orange-600">Wade: {fmt(totals.byTech['Wade'] || 0)}</span>
-                            <span className="text-blue-600">Wayne: {fmt(totals.byTech['Wayne'] || 0)}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                <div className="space-y-6">
+                  {Object.keys(shopGroups).sort().map(shop => {
+                    const rows = shopGroups[shop]
+                    const shopTotals = { paid: 0, parts: 0, partsCost: 0, shopCut: 0, byTech: {} as Record<string, number> }
+                    rows.forEach(row => {
+                      const c = calc(row)
+                      shopTotals.paid += c.paid; shopTotals.parts += c.partsCharged
+                      shopTotals.partsCost += c.partsCost; shopTotals.shopCut += c.shopCut
+                      addToByTech(shopTotals.byTech, row, c)
+                    })
+                    return (
+                      <div key={shop}>
+                        <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{shop}</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                                <th className="pb-2 pr-3">WO#</th>
+                                <th className="pb-2 pr-3">Customer</th>
+                                <th className="pb-2 pr-3">Technician</th>
+                                <th className="pb-2 pr-3 text-right">Amount Paid</th>
+                                <th className="pb-2 pr-3 text-right">Parts Chg to Customer</th>
+                                <th className="pb-2 pr-3 text-right">Actual Part Cost</th>
+                                <th className="pb-2 pr-3 text-right">To Referral Shop</th>
+                                <th className="pb-2 text-right">Net Earned</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map(row => {
+                                const c = calc(row)
+                                return (
+                                  <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                    <td className="py-1.5 pr-3">
+                                      <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                                        {String(row.order_number)}
+                                      </Link>
+                                    </td>
+                                    <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                                    <td className="py-1.5 pr-3">
+                                      <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
+                                        {String(row.technician || 'Unassigned')}
+                                      </span>
+                                      {c.useOldSplit && (
+                                        <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
+                                      )}
+                                    </td>
+                                    <td className="py-1.5 pr-3 text-right font-medium">{fmt(c.paid)}</td>
+                                    <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
+                                    <td className="py-1.5 pr-3 text-right text-red-500">{c.partsCost > 0 ? fmt(c.partsCost) : '-'}</td>
+                                    <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.shopCut)}</td>
+                                    <td className="py-1.5 text-right font-medium">{fmt(c.net)}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr className="border-t-2 font-semibold">
+                                <td colSpan={3} className="pt-2 text-gray-600">{shop} subtotal ({rows.length} WO{rows.length !== 1 ? 's' : ''})</td>
+                                <td className="pt-2 text-right">{fmt(shopTotals.paid)}</td>
+                                <td className="pt-2 text-right text-gray-600">{fmt(shopTotals.parts)}</td>
+                                <td className="pt-2 text-right text-red-600">{fmt(shopTotals.partsCost)}</td>
+                                <td className="pt-2 text-right text-orange-500">{fmt(shopTotals.shopCut)}</td>
+                                <td className="pt-2 text-right">-</td>
+                              </tr>
+                              <tr>
+                                <td colSpan={8} className="pt-2">
+                                  <div className="flex gap-4 justify-end text-sm font-semibold">
+                                    <span className="text-orange-600">Wade: {fmt(shopTotals.byTech['Wade'] || 0)}</span>
+                                    <span className="text-blue-600">Wayne: {fmt(shopTotals.byTech['Wayne'] || 0)}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  <div className="pt-3 border-t-2">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Grand Totals - All Shops ({settleData.length} WO{settleData.length !== 1 ? 's' : ''})</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-gray-500 mb-1">Amount Paid</div>
+                        <div className="font-bold text-gray-800">{fmt(grandTotals.paid)}</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-gray-500 mb-1">Parts Charged</div>
+                        <div className="font-bold text-gray-800">{fmt(grandTotals.parts)}</div>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-red-500 mb-1">Actual Part Cost</div>
+                        <div className="font-bold text-red-600">{fmt(grandTotals.partsCost)}</div>
+                      </div>
+                      <div className="bg-orange-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-orange-600 mb-1">Wade</div>
+                        <div className="font-bold text-orange-600">{fmt(grandTotals.byTech['Wade'] || 0)}</div>
+                      </div>
+                      <div className="bg-blue-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-blue-600 mb-1">Wayne</div>
+                        <div className="font-bold text-blue-600">{fmt(grandTotals.byTech['Wayne'] || 0)}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )
             })()}
@@ -707,183 +801,177 @@ function ReportsPageInner() {
               )}
             </div>
 
-            {tripData && (
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-semibold text-gray-700 mb-2">
-                    Dropping Off Today
-                    <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-normal">{tripData.thisTrip.length} items</span>
-                  </h3>
-                  {tripData.thisTrip.length === 0 ? (
-                    <p className="text-sm text-gray-400 italic">No drop-offs recorded for this date.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                            <th className="pb-2 pr-3">WO#</th>
-                            <th className="pb-2 pr-3">Customer</th>
-                            <th className="pb-2 pr-3">Equipment</th>
-                            <th className="pb-2 pr-3">Work Done / Notes</th>
-                            <th className="pb-2 pr-3 text-right">Invoice</th>
-                            <th className="pb-2 text-right text-orange-600">WW Owes Shop</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tripData.thisTrip.map(row => {
-                            const shopAmt = Number(row.shop_payment_amount) || 0
-                            const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
-                            const owes = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 0) * 0.20
-                            return (
-                              <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                                <td className="py-1.5 pr-3">
-                                  <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
-                                </td>
-                                <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs max-w-xs truncate">{String(row.work_done || row.complaint || '-')}</td>
-                                <td className="py-1.5 pr-3 text-right">{inv > 0 ? fmt(inv) : '-'}</td>
-                                <td className="py-1.5 text-right text-orange-600 font-medium">{owes > 0 ? fmt(owes) : '-'}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t-2 font-semibold">
-                            <td colSpan={4}></td>
-                            <td className="pt-2 text-right">
-                              {fmt(tripData.thisTrip.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
-                            </td>
-                            <td className="pt-2 text-right text-orange-600">
-                              {fmt(tripData.thisTrip.reduce((s, r) => s + (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20, 0))}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </div>
+            {tripData && (() => {
+              const groupByShop = (rows: Record<string, unknown>[]) => {
+                const groups: Record<string, Record<string, unknown>[]> = {}
+                rows.forEach(r => {
+                  const shop = String(r.referral_shop || 'Other Shop')
+                  if (!groups[shop]) groups[shop] = []
+                  groups[shop].push(r)
+                })
+                return groups
+              }
+              const calcInv = (r: Record<string, unknown>) => { const sa = Number(r.shop_payment_amount) || 0; return sa > 0 ? sa : (Number(r.amount_charged) || 0) }
+              const calcOwes = (r: Record<string, unknown>) => (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 0) * 0.20
 
-                <div>
-                  <h3 className="font-semibold text-gray-700 mb-2">
-                    Previously Returned - Awaiting Shop Payment
-                    <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">{tripData.outstanding.length} items</span>
-                  </h3>
-                  {tripData.outstanding.length === 0 ? (
-                    <p className="text-sm text-green-600 italic">All caught up - no outstanding items.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                            <th className="pb-2 pr-3">WO#</th>
-                            <th className="pb-2 pr-3">Customer</th>
-                            <th className="pb-2 pr-3">Equipment</th>
-                            <th className="pb-2 pr-3">Returned</th>
-                            <th className="pb-2 pr-3">Notes</th>
-                            <th className="pb-2 pr-3 text-right">Invoice</th>
-                            <th className="pb-2 text-right text-orange-600">WW Owes Shop</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tripData.outstanding.map(row => {
-                            const shopAmt = Number(row.shop_payment_amount) || 0
-                            const inv = shopAmt > 0 ? shopAmt : (Number(row.amount_charged) || 0)
-                            const owes = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 0) * 0.20
-                            return (
-                              <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                                <td className="py-1.5 pr-3">
-                                  <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
-                                </td>
-                                <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs max-w-xs truncate">{String(row.work_done || row.complaint || '-')}</td>
-                                <td className="py-1.5 pr-3 text-right">{inv > 0 ? fmt(inv) : '-'}</td>
-                                <td className="py-1.5 text-right text-orange-600 font-medium">{owes > 0 ? fmt(owes) : '-'}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t-2 font-semibold">
-                            <td colSpan={5}></td>
-                            <td className="pt-2 text-right">
-                              {fmt(tripData.outstanding.reduce((s, r) => { const sa = Number(r.shop_payment_amount)||0; return s + (sa > 0 ? sa : (Number(r.amount_charged)||0)) }, 0))}
-                            </td>
-                            <td className="pt-2 text-right text-orange-600">
-                              {fmt(tripData.outstanding.reduce((s, r) => s + (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20, 0))}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
+              const shopSection = (rows: Record<string, unknown>[], showReturnedCol: boolean) => {
+                const groups = groupByShop(rows)
+                return Object.keys(groups).sort().map(shop => {
+                  const shopRows = groups[shop]
+                  const shopInv = shopRows.reduce((s, r) => s + calcInv(r), 0)
+                  const shopOwes = shopRows.reduce((s, r) => s + calcOwes(r), 0)
+                  return (
+                    <div key={shop} className="mb-4">
+                      <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{shop}</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                              <th className="pb-2 pr-3">WO#</th>
+                              <th className="pb-2 pr-3">Customer</th>
+                              <th className="pb-2 pr-3">Equipment</th>
+                              {showReturnedCol && <th className="pb-2 pr-3">Returned</th>}
+                              <th className="pb-2 pr-3">{showReturnedCol ? 'Notes' : 'Work Done / Notes'}</th>
+                              <th className="pb-2 pr-3 text-right">Invoice</th>
+                              <th className="pb-2 text-right text-orange-600">WW Owes Shop</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shopRows.map(row => {
+                              const inv = calcInv(row)
+                              const owes = calcOwes(row)
+                              return (
+                                <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                  <td className="py-1.5 pr-3">
+                                    <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
+                                  </td>
+                                  <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                                  <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                                  {showReturnedCol && <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>}
+                                  <td className="py-1.5 pr-3 text-gray-500 text-xs max-w-xs truncate">{String(row.work_done || row.complaint || '-')}</td>
+                                  <td className="py-1.5 pr-3 text-right">{inv > 0 ? fmt(inv) : '-'}</td>
+                                  <td className="py-1.5 text-right text-orange-600 font-medium">{owes > 0 ? fmt(owes) : '-'}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 font-semibold">
+                              <td colSpan={showReturnedCol ? 4 : 3}>{shop} subtotal</td>
+                              <td className="pt-2 text-right">{fmt(shopInv)}</td>
+                              <td className="pt-2 text-right text-orange-600">{fmt(shopOwes)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
                     </div>
-                  )}
+                  )
+                })
+              }
+
+              return (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-700 mb-2">
+                      Dropping Off Today
+                      <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-normal">{tripData.thisTrip.length} items</span>
+                    </h3>
+                    {tripData.thisTrip.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">No drop-offs recorded for this date.</p>
+                    ) : shopSection(tripData.thisTrip, false)}
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-gray-700 mb-2">
+                      Previously Returned - Awaiting Shop Payment
+                      <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">{tripData.outstanding.length} items</span>
+                    </h3>
+                    {tripData.outstanding.length === 0 ? (
+                      <p className="text-sm text-green-600 italic">All caught up - no outstanding items.</p>
+                    ) : shopSection(tripData.outstanding, true)}
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </Section>
 
           {/* At the Shop */}
           <Section title="Currently at the Shop (Returned - Awaiting Payment)">
             {atShop.length === 0 ? (
               <p className="text-sm text-green-600 text-center py-4">All caught up - no outstanding items</p>
-            ) : (
-              <div className="space-y-3">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                        <th className="pb-2 pr-3">WO#</th>
-                        <th className="pb-2 pr-3">Customer</th>
-                        <th className="pb-2 pr-3">Equipment</th>
-                        <th className="pb-2 pr-3">Returned</th>
-                        <th className="pb-2 pr-3 text-right">Invoice</th>
-                        <th className="pb-2 text-right text-orange-600">WW Owes Shop (20%)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {atShop.map(row => {
-                        const invoice = Number(row.amount_charged) || 0
-                        const partsCharged = Number(row.parts_charged) || 0
-                        const afterParts = invoice - partsCharged
-                        const wwOwes = afterParts > 0 ? afterParts * 0.20 : 0
-                        return (
-                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                            <td className="py-1.5 pr-3">
-                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                {String(row.order_number)}
-                              </Link>
-                            </td>
-                            <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
-                            <td className="py-1.5 pr-3 text-right">{invoice > 0 ? fmt(invoice) : '-'}</td>
-                            <td className="py-1.5 text-right text-orange-600 font-medium">{wwOwes > 0 ? fmt(wwOwes) : '-'}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 font-semibold">
-                        <td colSpan={4} className="pt-2 text-gray-600">Totals</td>
-                        <td className="pt-2 text-right">
-                          {fmt(atShop.reduce((s, row) => s + (Number(row.amount_charged) || 0), 0))}
-                        </td>
-                        <td className="pt-2 text-right text-orange-600">
-                          {fmt(atShop.reduce((s, row) => {
-                            const invoice = Number(row.amount_charged) || 0
-                            const partsCharged = Number(row.parts_charged) || 0
-                            const afterParts = invoice - partsCharged
-                            return s + (afterParts > 0 ? afterParts * 0.20 : 0)
-                          }, 0))}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+            ) : (() => {
+              const groups: Record<string, Record<string, unknown>[]> = {}
+              atShop.forEach(row => {
+                const shop = String(row.referral_shop || 'Other Shop')
+                if (!groups[shop]) groups[shop] = []
+                groups[shop].push(row)
+              })
+              const calcOwes = (row: Record<string, unknown>) => {
+                const invoice = Number(row.amount_charged) || 0
+                const partsCharged = Number(row.parts_charged) || 0
+                const afterParts = invoice - partsCharged
+                return afterParts > 0 ? afterParts * 0.20 : 0
+              }
+              return (
+                <div className="space-y-5">
+                  {Object.keys(groups).sort().map(shop => {
+                    const rows = groups[shop]
+                    const shopInv = rows.reduce((s, row) => s + (Number(row.amount_charged) || 0), 0)
+                    const shopOwes = rows.reduce((s, row) => s + calcOwes(row), 0)
+                    return (
+                      <div key={shop}>
+                        <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{shop}</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                                <th className="pb-2 pr-3">WO#</th>
+                                <th className="pb-2 pr-3">Customer</th>
+                                <th className="pb-2 pr-3">Equipment</th>
+                                <th className="pb-2 pr-3">Returned</th>
+                                <th className="pb-2 pr-3 text-right">Invoice</th>
+                                <th className="pb-2 text-right text-orange-600">WW Owes Shop (20%)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map(row => {
+                                const invoice = Number(row.amount_charged) || 0
+                                const wwOwes = calcOwes(row)
+                                return (
+                                  <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                    <td className="py-1.5 pr-3">
+                                      <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                                        {String(row.order_number)}
+                                      </Link>
+                                    </td>
+                                    <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                                    <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                                    <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
+                                    <td className="py-1.5 pr-3 text-right">{invoice > 0 ? fmt(invoice) : '-'}</td>
+                                    <td className="py-1.5 text-right text-orange-600 font-medium">{wwOwes > 0 ? fmt(wwOwes) : '-'}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr className="border-t-2 font-semibold">
+                                <td colSpan={4} className="pt-2 text-gray-600">{shop} subtotal</td>
+                                <td className="pt-2 text-right">{fmt(shopInv)}</td>
+                                <td className="pt-2 text-right text-orange-600">{fmt(shopOwes)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div className="flex justify-end gap-6 pt-2 border-t-2 text-sm font-semibold">
+                    <span>All Shops Invoice Total: {fmt(atShop.reduce((s, row) => s + (Number(row.amount_charged) || 0), 0))}</span>
+                    <span className="text-orange-600">All Shops WW Owes: {fmt(atShop.reduce((s, row) => s + calcOwes(row), 0))}</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </Section>
 
           {/* Full Referral History */}
@@ -895,6 +983,7 @@ function ReportsPageInner() {
                     <tr className="text-left text-gray-500 border-b text-xs uppercase">
                       <th className="pb-2 pr-3">WO#</th>
                       <th className="pb-2 pr-3">Customer</th>
+                      <th className="pb-2 pr-3">Shop</th>
                       <th className="pb-2 pr-3">Equipment</th>
                       <th className="pb-2 pr-3">Returned to Shop</th>
                       <th className="pb-2 pr-3 text-right">Invoice Amount</th>
@@ -922,6 +1011,9 @@ function ReportsPageInner() {
                             </Link>
                           </td>
                           <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
+                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Other Shop')}</span>
+                          </td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
                           <td className="py-1.5 pr-3 text-right">
@@ -938,7 +1030,7 @@ function ReportsPageInner() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 font-semibold">
-                      <td colSpan={7} className="pt-2 text-gray-600">Total Paid to Shop</td>
+                      <td colSpan={8} className="pt-2 text-gray-600">Total Paid to Shop (All Shops)</td>
                       <td className="pt-2 text-right text-orange-600">
                         {fmt(refHistory.reduce((s, row) => {
                           const shopAmt = Number(row.shop_payment_amount) || 0
