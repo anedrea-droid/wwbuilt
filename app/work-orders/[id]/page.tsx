@@ -1088,11 +1088,13 @@ export default function WorkOrderDetail() {
           const afterParts = invoice - partsChargeTotal
           const referralCut = isReferral ? afterParts * 0.20 : 0
           const netEarned = afterParts - referralCut
-          // Payout method changed 2026-07-30: jobs completed/paid before that date still
-          // split 60/40 (matching how they were actually paid out); jobs from that date
-          // forward pay 100% to whoever is assigned.
-          const effDate = wo.dateComplete || wo.referralDropoffDate || wo.dateIn || ''
-          const useOldSplit = effDate && String(effDate).slice(0, 10) < '2026-07-30'
+          // Payout method changed for anything paid after 2026-07-01: jobs paid on or
+          // before that date still split 60/40 (matching how they were actually paid out);
+          // jobs paid after that date pay 100% to whoever is assigned (50/50 if Both).
+          // Referral jobs have an actual shop payment date; in-house jobs don't track a
+          // separate paid date, so we use the completion date as the best available stand-in.
+          const paidDate = wo.shopPaymentDate || wo.dateComplete || wo.referralDropoffDate || wo.dateIn || ''
+          const useOldSplit = paidDate && String(paidDate).slice(0, 10) <= '2026-07-01'
           const wadePayout = netEarned * 0.60
           const waynePayout = netEarned * 0.40
           return (
@@ -1142,16 +1144,10 @@ export default function WorkOrderDetail() {
                     </div>
                   </>
                 ) : wo.technician === 'Wayne' ? (
-                  <>
-                    <div className="flex justify-between text-blue-700">
-                      <span>Wayne (70%)</span>
-                      <span className="font-semibold">${(netEarned * 0.70).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-orange-700">
-                      <span>Wade (30%)</span>
-                      <span className="font-semibold">${(netEarned * 0.30).toFixed(2)}</span>
-                    </div>
-                  </>
+                  <div className="flex justify-between font-semibold text-blue-700">
+                    <span>Wayne (100%)</span>
+                    <span>${netEarned.toFixed(2)}</span>
+                  </div>
                 ) : wo.technician === 'Wade' ? (
                   <div className="flex justify-between font-semibold text-orange-700">
                     <span>Wade (100%)</span>
