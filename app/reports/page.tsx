@@ -248,7 +248,7 @@ export default function ReportsPage() {
         <div className="space-y-5">
 
           {/* Payout Summary */}
-          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Jobs from 2026-07-30 onward pay 100% to whoever is assigned; jobs before that date still split 60/40 Wade/Wayne to match how they were actually paid out.">
+          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Jobs paid after 2026-07-01 go 100% to whoever is assigned (50/50 if Both); jobs paid on or before that date still split 60/40 Wade/Wayne to match how they were actually paid out.">
             {payouts.length === 0 ? <Empty /> : (() => {
               const totalPartsCostAll = payouts.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
 
@@ -270,9 +270,11 @@ export default function ReportsPage() {
               const referral = payouts.filter(r => r.customer_source === 'referral' && calcRow(r, true).isPaid)
 
               // Per-technician payout method changed on 2026-07-30: jobs completed/paid
-              // before that date still split 60/40 (matching how they were actually paid
-              // out in real life); jobs from that date forward pay 100% to whoever is assigned.
-              const SPLIT_CUTOVER_DATE = '2026-07-30'
+              // Payout method changed for anything paid after 2026-07-01: jobs paid on
+              // or before that date still split 60/40 (matching how they were actually paid
+              // out in real life); jobs paid after that date pay 100% to whoever is assigned
+              // (Wade or Wayne solo), or 50/50 if marked Both.
+              const SPLIT_CUTOVER_DATE = '2026-07-01'
 
               const sumRows = (rows: Record<string, unknown>[], isRef: boolean) => {
                 let revenue = 0, parts = 0, partsCost = 0, shopCut = 0, net = 0
@@ -283,14 +285,13 @@ export default function ReportsPage() {
                   net += c.net
                   partsCost += Number(row.parts_cost) || 0
                   const effDate = row.effective_date ? String(row.effective_date).slice(0, 10) : ''
-                  if (effDate && effDate < SPLIT_CUTOVER_DATE) {
+                  if (effDate && effDate <= SPLIT_CUTOVER_DATE) {
                     byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.60
                     byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.40
                   } else if (row.technician === 'Wade') {
                     byTech['Wade'] = (byTech['Wade'] || 0) + c.net
                   } else if (row.technician === 'Wayne') {
-                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.70
-                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.30
+                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net
                   } else if (row.technician === 'Both') {
                     byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.50
                     byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.50
@@ -343,7 +344,7 @@ export default function ReportsPage() {
                               <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
                                 {String(row.technician || 'Unassigned')}
                               </span>
-                              {(row.effective_date ? String(row.effective_date).slice(0, 10) : '') < '2026-07-30' && (
+                              {(row.effective_date ? String(row.effective_date).slice(0, 10) : '') <= '2026-07-01' && (
                                 <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
                               )}
                             </td>
@@ -564,7 +565,11 @@ export default function ReportsPage() {
             ) : settleData.length === 0 ? (
               <Empty />
             ) : (() => {
-              const SPLIT_CUTOVER_DATE = '2026-07-30'
+              const SPLIT_CUTOVER_DATE = '2026-07-01'
+              // This report is already filtered to a single shop_payment_date (settleDate),
+              // so the cutover check is based on the actual payment date, not the job's
+              // completion date.
+              const useOldSplit = settleDate <= SPLIT_CUTOVER_DATE
               const calc = (row: Record<string, unknown>) => {
                 const partsCharged = Number(row.parts_charged) || 0
                 const partsCost = Number(row.parts_cost) || 0
@@ -575,8 +580,6 @@ export default function ReportsPage() {
                 const afterParts = paid - partsCharged
                 const shopCut = afterParts > 0 ? afterParts * 0.20 : 0
                 const net = afterParts - shopCut
-                const effDate = row.date_complete || row.referral_dropoff_date || row.date_in || ''
-                const useOldSplit = effDate && String(effDate).slice(0, 10) < SPLIT_CUTOVER_DATE
                 return { paid, partsCharged, partsCost, shopCut, net, useOldSplit }
               }
               const totals = settleData.reduce((acc: { paid: number; parts: number; partsCost: number; shopCut: number; byTech: Record<string, number> }, row) => {
@@ -587,8 +590,7 @@ export default function ReportsPage() {
                 } else if (row.technician === 'Wade') {
                   acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net
                 } else if (row.technician === 'Wayne') {
-                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.70
-                  acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.30
+                  acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net
                 } else if (row.technician === 'Both') {
                   acc.byTech['Wade'] = (acc.byTech['Wade'] || 0) + c.net * 0.50
                   acc.byTech['Wayne'] = (acc.byTech['Wayne'] || 0) + c.net * 0.50
