@@ -16,7 +16,7 @@ interface WorkOrder {
 }
 interface Customer { id: string; name: string; phone: string; source: string; referralShop: string }
 interface Equipment { id: string; type: string; make: string; model: string; year: string; serialNumber: string }
-interface SavedPart { id: string; name: string; partNumber: string; supplier: string; cost: number; price: number }
+interface SavedPart { id: string; name: string; partNumber: string; supplier: string; cost: number; price: number; quantityOnHand: number }
 interface Part {
   id: string; name: string; partNumber: string; supplier: string
   quantity: number; cost: number; price: number
@@ -51,6 +51,7 @@ export default function WorkOrderDetail() {
     name: '', partNumber: '', supplier: '', quantity: 1,
     cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false,
   })
+  const [selectedSavedPartId, setSelectedSavedPartId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showWWModal, setShowWWModal] = useState(false)
   const [wwAcqType, setWwAcqType] = useState('abandoned')
@@ -186,7 +187,19 @@ export default function WorkOrderDetail() {
     })
     const part = await res.json()
     setParts(p => [...p, part])
+
+    // If this part was pulled from shop stock, take it out of inventory.
+    if (newPart.fromShop && selectedSavedPartId) {
+      await fetch('/api/saved-parts/' + selectedSavedPartId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adjustQuantityBy: -(Number(newPart.quantity) || 1) }),
+      })
+      fetch('/api/saved-parts').then(r => r.json()).then(d => setCatalog(Array.isArray(d) ? d : []))
+    }
+
     setNewPart({ name: '', partNumber: '', supplier: '', quantity: 1, cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false })
+    setSelectedSavedPartId(null)
     setShowAddPart(false)
     setShowCatalog(false)
     const woRes = await fetch('/api/work-orders/' + id)
@@ -359,7 +372,8 @@ export default function WorkOrderDetail() {
   }
 
   function loadFromCatalog(saved: SavedPart) {
-    setNewPart(p => ({ ...p, name: saved.name, partNumber: saved.partNumber, supplier: saved.supplier, cost: String(saved.cost), price: String(saved.price) }))
+    setNewPart(p => ({ ...p, name: saved.name, partNumber: saved.partNumber, supplier: saved.supplier, cost: String(saved.cost), price: String(saved.price), fromShop: true }))
+    setSelectedSavedPartId(saved.id)
     setShowCatalog(false)
     setShowAddPart(true)
   }
@@ -615,7 +629,7 @@ export default function WorkOrderDetail() {
               className="text-sm bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600">
               Pick from Catalog
             </button>
-            <button onClick={() => { setShowAddPart(v => !v); setShowCatalog(false) }}
+            <button onClick={() => { setShowAddPart(v => !v); setShowCatalog(false); setSelectedSavedPartId(null) }}
               className="text-sm bg-orange-500 text-white px-3 py-2 rounded-lg hover:bg-orange-600">
               + Add Part
             </button>
@@ -644,15 +658,23 @@ export default function WorkOrderDetail() {
                 <p className="text-xs text-gray-400">No matches found</p>
               ) : (
                 <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {matches.map(s => (
-                    <button key={s.id} onClick={() => { loadFromCatalog(s); setCatalogSearch('') }}
-                      className="w-full text-left px-3 py-2 bg-white rounded border hover:bg-blue-100 text-sm">
-                      <span className="font-medium">{s.name}</span>
-                      {s.partNumber && <span className="text-gray-400 ml-2">#{s.partNumber}</span>}
-                      {s.supplier && <span className="text-gray-400 ml-2">- {s.supplier}</span>}
-                      {Number(s.price) > 0 && <span className="text-gray-500 ml-2">${Number(s.price).toFixed(2)}</span>}
-                    </button>
-                  ))}
+                  {matches.map(s => {
+                    const qty = Number(s.quantityOnHand) || 0
+                    return (
+                      <button key={s.id} onClick={() => { loadFromCatalog(s); setCatalogSearch('') }}
+                        className="w-full text-left px-3 py-2 bg-white rounded border hover:bg-blue-100 text-sm flex items-center justify-between gap-2">
+                        <span>
+                          <span className="font-medium">{s.name}</span>
+                          {s.partNumber && <span className="text-gray-400 ml-2">#{s.partNumber}</span>}
+                          {s.supplier && <span className="text-gray-400 ml-2">- {s.supplier}</span>}
+                          {Number(s.price) > 0 && <span className="text-gray-500 ml-2">${Number(s.price).toFixed(2)}</span>}
+                        </span>
+                        <span className={'text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ' + (qty === 0 ? 'bg-red-100 text-red-700' : qty <= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700')}>
+                          {qty} in stock
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               )
             })()}
@@ -729,7 +751,7 @@ export default function WorkOrderDetail() {
                 className={'text-sm px-4 py-1 rounded-lg disabled:opacity-50 text-white ' + (newPart.fromShop ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-500 hover:bg-orange-600')}>
                 {newPart.fromShop ? 'Add from Stock' : 'Add Part'}
               </button>
-              <button onClick={() => setShowAddPart(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={() => { setShowAddPart(false); setSelectedSavedPartId(null) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
             </div>
           </div>
         )}
