@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 
 const PRINT_STYLES = '@media print { nav { display: none !important; } .print\\:hidden { display: none !important; } body { background: white !important; } }'
 
-type ReportTab = 'financial' | 'referral' | 'workorders' | 'parts'
+type ReportTab = 'financial' | 'referral' | 'workorders' | 'parts' | 'admin'
 
 function fmt(n: unknown) {
   return '$' + Number(n || 0).toFixed(2)
@@ -55,7 +55,7 @@ function ReportsPageInner() {
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = today.slice(0, 8) + '01'
 
-  const validTabs: ReportTab[] = ['financial', 'referral', 'workorders', 'parts']
+  const validTabs: ReportTab[] = ['financial', 'referral', 'workorders', 'parts', 'admin']
   const initialTab = (searchParams.get('tab') as ReportTab) || 'financial'
   const [tab, setTab] = useState<ReportTab>(validTabs.includes(initialTab) ? initialTab : 'financial')
 
@@ -76,6 +76,7 @@ function ReportsPageInner() {
   const [payouts, setPayouts] = useState<Record<string, unknown>[]>([])
   const [outstanding, setOutstanding] = useState<Record<string, unknown>[]>([])
   const [noCharge, setNoCharge] = useState<Record<string, unknown>[]>([])
+  const [needsReminder, setNeedsReminder] = useState<Record<string, unknown>[]>([])
   const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
   const [atShop, setAtShop] = useState<Record<string, unknown>[]>([])
   const [refHistory, setRefHistory] = useState<Record<string, unknown>[]>([])
@@ -239,6 +240,10 @@ function ReportsPageInner() {
       setRevenue(Array.isArray(r) ? r : [])
       setPartsReport(Array.isArray(pr) ? pr : [])
     }
+    if (tab === 'admin') {
+      const nr = await fetch(base + 'type=needs-reminder').then(x => x.json())
+      setNeedsReminder(Array.isArray(nr) ? nr : [])
+    }
     setLoading(false)
   }, [tab, fromDate, toDate])
 
@@ -249,6 +254,7 @@ function ReportsPageInner() {
     { id: 'referral',   label: 'Referral Shop' },
     { id: 'workorders', label: 'Work Orders' },
     { id: 'parts',      label: 'Parts' },
+    { id: 'admin',      label: 'Administrative' },
   ]
 
   const needsDates = tab === 'financial' || tab === 'workorders' || tab === 'parts'
@@ -299,6 +305,7 @@ function ReportsPageInner() {
           {tab === 'referral' && 'Referral Shop Reports'}
           {tab === 'workorders' && 'Completed Work Orders - ' + fromDate + ' to ' + toDate}
           {tab === 'parts' && 'Pending Parts Report'}
+          {tab === 'admin' && 'Administrative - Unpaid Follow-Up'}
         </div>
       </div>
 
@@ -1359,6 +1366,82 @@ function ReportsPageInner() {
                       )
                     })}
                   </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
+        </div>
+      )}
+
+      {!loading && tab === 'admin' && (
+        <div className="space-y-5">
+          <Section title="Unpaid - No Recent Reminder Sent" subtitle="Completed (in-house) and At Shop (referral) work orders that are still unpaid and haven't had a pickup reminder text sent in the last 10 days. Use this to know who to follow up with.">
+            {needsReminder.length === 0 ? (
+              <p className="text-sm text-green-600 text-center py-4">Everyone unpaid has been texted recently - nothing to follow up on</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                      <th className="pb-2 pr-3">WO#</th>
+                      <th className="pb-2 pr-3">Customer</th>
+                      <th className="pb-2 pr-3">Phone</th>
+                      <th className="pb-2 pr-3">Type</th>
+                      <th className="pb-2 pr-3">Equipment</th>
+                      <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 pr-3">Last Text</th>
+                      <th className="pb-2 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {needsReminder.map(row => {
+                      const isRef = row.customer_source === 'referral'
+                      const charged = Number(row.amount_charged) || 0
+                      const paid = Number(row.amount_paid) || 0
+                      return (
+                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="py-1.5 pr-3">
+                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                              {String(row.order_number)}
+                            </Link>
+                          </td>
+                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3">
+                            {row.customer_phone ? (
+                              <a href={'tel:' + String(row.customer_phone).replace(/[^0-9+]/g, '')} className="text-orange-600 hover:underline text-xs">
+                                {String(row.customer_phone)}
+                              </a>
+                            ) : <span className="text-gray-400 text-xs">-</span>}
+                          </td>
+                          <td className="py-1.5 pr-3">
+                            {isRef
+                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
+                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                          <td className="py-1.5 pr-3 text-xs">
+                            {row.last_text_at
+                              ? <span className="text-gray-500">{fmtDate(row.last_text_at)}</span>
+                              : <span className="text-red-500 font-medium">Never texted</span>}
+                          </td>
+                          <td className="py-1.5 text-right font-semibold text-orange-600">
+                            {charged > 0
+                              ? fmt(charged - paid)
+                              : <span className="text-gray-400 text-xs">not invoiced</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td colSpan={7} className="pt-2 text-gray-600">{needsReminder.length} work order{needsReminder.length !== 1 ? 's' : ''} need follow-up</td>
+                      <td className="pt-2 text-right text-orange-600">
+                        {fmt(needsReminder.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
