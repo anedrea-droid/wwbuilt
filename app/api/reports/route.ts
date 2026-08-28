@@ -67,6 +67,43 @@ export async function GET(req: Request) {
       return NextResponse.json(rows)
     }
 
+    if (type === 'needs-reminder') {
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.status, ' +
+        'wo.date_complete, wo.referral_dropoff_date, ' +
+        'c.name as customer_name, c.phone as customer_phone, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
+        '     ELSE wo.amount_charged END as amount_charged, ' +
+        'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN 0 ' +
+        '     ELSE COALESCE(wo.amount_paid, 0) END as amount_paid, ' +
+        'lastText.last_text_at ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN LATERAL (' +
+        '  SELECT MAX(cl.created_at) as last_text_at FROM contact_log cl ' +
+        '  WHERE cl.work_order_id = wo.id AND cl.type = \'text\'' +
+        ') lastText ON true ' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
+        'AND (' +
+        '  (' +
+        '    (COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') ' +
+        '    AND wo.status IN (\'complete\', \'picked-up\') ' +
+        '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
+        '  ) OR (' +
+        '    COALESCE(wo.source, c.source) = \'referral\' ' +
+        '    AND wo.referral_dropoff_date IS NOT NULL ' +
+        '    AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
+        '  )' +
+        ') ' +
+        'AND (lastText.last_text_at IS NULL OR lastText.last_text_at < NOW() - INTERVAL \'10 days\') ' +
+        'ORDER BY wo.date_in ASC'
+      )
+      return NextResponse.json(rows)
+    }
+
     if (type === 'revenue') {
       const { rows } = await pool.query(
         'SELECT ' +
