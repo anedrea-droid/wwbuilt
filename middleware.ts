@@ -12,7 +12,7 @@ async function hashPassword(pass: string): Promise<string> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  if (pathname.startsWith("/login") || pathname.startsWith("/api/auth")) {
+  if (pathname.startsWith("/login") || pathname.startsWith("/api/auth") || pathname.startsWith("/api/health")) {
     return NextResponse.next()
   }
 
