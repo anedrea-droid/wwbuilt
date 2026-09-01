@@ -31,6 +31,7 @@ const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   'at-shop':       { label: 'At Referral Shop',   cls: 'bg-purple-100 text-purple-700' },
   'picked-up':     { label: 'Picked Up',          cls: 'bg-slate-100 text-slate-500' },
   'donated':       { label: 'Donated to WW',       cls: 'bg-purple-100 text-purple-700' },
+  'denied':        { label: 'Denied - Fee Due', cls: 'bg-pink-100 text-pink-700' },
   'abandoned':     { label: 'WW Property',          cls: 'bg-red-100 text-red-700' },
 }
 
