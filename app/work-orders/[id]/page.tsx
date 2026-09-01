@@ -56,6 +56,11 @@ export default function WorkOrderDetail() {
   const [showWWModal, setShowWWModal] = useState(false)
   const [wwAcqType, setWwAcqType] = useState('abandoned')
   const [wwNotes, setWwNotes] = useState('')
+  const [shopEquipment, setShopEquipment] = useState<{
+    id: string; acquisition_type: string; acquired_date: string | null
+    condition_notes: string | null; status: string
+    asking_price: number | null; sale_price: number | null; sale_date: string | null
+  } | null>(null)
   const [editingPart, setEditingPart] = useState<string | null>(null)
   const [partForm, setPartForm] = useState<Partial<Part>>({})
   const [photos, setPhotos] = useState<{id:string;url:string;public_id:string}[]>([])
@@ -94,9 +99,16 @@ export default function WorkOrderDetail() {
       commissionPaidDate: d(data.commissionPaidDate) }
   }
 
+  function loadShopEquipment() {
+    fetch('/api/shop-equipment?workOrderId=' + id).then(r => r.json()).then(d => {
+      setShopEquipment(Array.isArray(d) && d.length > 0 ? d[0] : null)
+    })
+  }
+
   useEffect(() => {
     fetch('/api/work-orders/' + id + '/photos').then(r => r.json()).then(d => setPhotos(Array.isArray(d) ? d : []))
     fetch('/api/contact-log?workOrderId=' + id).then(r => r.json()).then(d => setContactLog(Array.isArray(d) ? d : []))
+    loadShopEquipment()
     fetch('/api/work-orders/' + id)
       .then(r => r.json()).then(data => { const n = normalizeDates(data); setWo(n); setForm(n) })
     fetch('/api/parts?workOrderId=' + id)
@@ -133,6 +145,7 @@ export default function WorkOrderDetail() {
     })
     setShowWWModal(false)
     setWwNotes('')
+    loadShopEquipment()
     const woRes = await fetch('/api/work-orders/' + id)
     const woData = normalizeDates(await woRes.json())
     setWo(woData)
@@ -480,6 +493,37 @@ export default function WorkOrderDetail() {
           )}
         </div>
       </div>
+
+      {(wo.status === 'donated' || wo.status === 'abandoned') && (
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-purple-800">
+              This equipment already became WW Property ({wo.status === 'donated' ? 'Donated' : 'Abandoned'})
+            </p>
+            {shopEquipment ? (
+              <div className="text-sm text-purple-700 mt-1 space-y-0.5">
+                <p>Marked on {shopEquipment.acquired_date ? String(shopEquipment.acquired_date).slice(0, 10) : '-'}</p>
+                <p>
+                  Current shop status:{' '}
+                  <span className="font-medium capitalize">{shopEquipment.status.replace('-', ' ')}</span>
+                  {shopEquipment.status === 'sold' && shopEquipment.sale_price != null && (
+                    <> - sold for ${Number(shopEquipment.sale_price).toFixed(2)}{shopEquipment.sale_date ? ' on ' + String(shopEquipment.sale_date).slice(0, 10) : ''}</>
+                  )}
+                  {shopEquipment.status !== 'sold' && shopEquipment.asking_price != null && (
+                    <> - asking ${Number(shopEquipment.asking_price).toFixed(2)}</>
+                  )}
+                </p>
+                {shopEquipment.condition_notes && <p>Condition: {shopEquipment.condition_notes}</p>}
+              </div>
+            ) : (
+              <p className="text-sm text-purple-600 mt-1">No shop equipment record found for this work order - it may have been marked before this tracking existed.</p>
+            )}
+          </div>
+          <Link href="/shop-equipment" className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 whitespace-nowrap">
+            View in Shop Equipment
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow p-4">
