@@ -26,7 +26,7 @@ export async function GET(req: Request) {
         'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
         'AND (' +
-        '  ((COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') AND wo.status IN (\'complete\', \'picked-up\', \'denied\'))' +
+        '  ((COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') AND wo.status IN (\'complete\', \'picked-up\'))' +
         '  OR (COALESCE(wo.source, c.source) = \'referral\' AND wo.status IN (\'at-shop\', \'complete\', \'picked-up\'))' +
         ') ' +
         'GROUP BY wo.id, c.name, c.source, c.referral_shop ' +
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
         'AND (' +
         '  (' +
         '    (COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') ' +
-        '    AND wo.status IN (\'complete\', \'picked-up\', \'denied\') ' +
+        '    AND wo.status IN (\'complete\', \'picked-up\') ' +
         '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
         '  ) OR (' +
         '    COALESCE(wo.source, c.source) = \'referral\' ' +
@@ -90,7 +90,7 @@ export async function GET(req: Request) {
         'AND (' +
         '  (' +
         '    (COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') ' +
-        '    AND wo.status IN (\'complete\', \'picked-up\', \'denied\') ' +
+        '    AND wo.status IN (\'complete\', \'picked-up\') ' +
         '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
         '  ) OR (' +
         '    COALESCE(wo.source, c.source) = \'referral\' ' +
@@ -106,14 +106,15 @@ export async function GET(req: Request) {
 
     if (type === 'denied-service') {
       const { rows } = await pool.query(
-        'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.technician, ' +
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, wo.technician, ' +
         'wo.amount_charged, wo.amount_paid, wo.payment_method, ' +
+        'COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'c.name as customer_name, c.phone as customer_phone, ' +
         'e.type as equipment_type, e.make, e.model ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
-        'WHERE wo.status = \'denied\' ' +
+        'WHERE wo.service_denied = true ' +
         'ORDER BY wo.date_in DESC'
       )
       return NextResponse.json(rows)
@@ -282,7 +283,7 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
-        'WHERE wo.status NOT IN (\'complete\', \'picked-up\', \'donated\', \'abandoned\', \'at-shop\', \'denied\') ' +
+        'WHERE wo.status NOT IN (\'complete\', \'picked-up\', \'donated\', \'abandoned\', \'at-shop\') ' +
         'ORDER BY wo.date_in ASC'
       )
       return NextResponse.json(rows)
