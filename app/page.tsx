@@ -30,6 +30,7 @@ const STATUS_CFG: Record<string, { label: string; cls: string; dot: string }> = 
   'abandoned':     { label: 'Abandoned - WW Property', cls: 'bg-red-100 text-red-700',    dot: 'bg-red-400' },
   'at-shop':       { label: 'At Referral Shop',    cls: 'bg-purple-100 text-purple-700',dot: 'bg-purple-500' },
   'picked-up':     { label: 'Picked Up',           cls: 'bg-slate-100 text-slate-600',  dot: 'bg-slate-400' },
+  'denied':        { label: 'Denied - Fee Due',    cls: 'bg-pink-100 text-pink-700',    dot: 'bg-pink-500' },
 }
 
 const TECH_CFG: Record<string, string> = {
@@ -52,7 +53,7 @@ export default function WorkOrdersDashboard() {
       .catch(() => setLoading(false))
   }, [])
 
-  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned'
+  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned' && o.status !== 'denied'
 
   const filtered = orders.filter(o => {
     if (tab === 'active')  return isActive(o)
@@ -61,7 +62,7 @@ export default function WorkOrdersDashboard() {
     if (tab === 'parts')   return o.status === 'waiting-parts'
     if (tab === 'ready')   return o.status === 'complete'
     if (tab === 'atshop')  return o.status === 'at-shop'
-    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned'
+    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned' || o.status === 'denied'
     return true
   })
 
