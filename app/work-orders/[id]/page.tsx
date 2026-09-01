@@ -32,6 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
   'picked-up':     'bg-gray-100 text-gray-800',
   'abandoned':     'bg-red-100 text-red-800',
   'donated':       'bg-purple-100 text-purple-800',
+  'denied':        'bg-pink-100 text-pink-800',
 }
 
 export default function WorkOrderDetail() {
@@ -479,7 +480,7 @@ export default function WorkOrderDetail() {
             className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
             Print Work Order
           </button>
-          {isMobile && customer?.phone && (wo.status === 'complete' || ((wo.source || customer.source) === 'referral' && wo.status === 'at-shop')) && (
+          {isMobile && customer?.phone && (wo.status === 'complete' || wo.status === 'denied' || ((wo.source || customer.source) === 'referral' && wo.status === 'at-shop')) && (
             <button onClick={sendPickupReminder}
               className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700">
               Text Pickup Reminder
@@ -595,8 +596,18 @@ export default function WorkOrderDetail() {
             {editing ? (
               <select value={form.status || ''} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 className="w-full border rounded px-2 py-1 text-sm">
-                {['pending','in-progress','waiting-parts','complete','at-shop','picked-up','abandoned','donated'].map(s => (
-                  <option key={s} value={s}>{s}</option>
+                {[
+                  { value: 'pending', label: 'pending' },
+                  { value: 'in-progress', label: 'in-progress' },
+                  { value: 'waiting-parts', label: 'waiting-parts' },
+                  { value: 'complete', label: 'complete' },
+                  { value: 'denied', label: 'denied - service declined (diagnostic fee only)' },
+                  { value: 'at-shop', label: 'at-shop' },
+                  { value: 'picked-up', label: 'picked-up' },
+                  { value: 'abandoned', label: 'abandoned' },
+                  { value: 'donated', label: 'donated' },
+                ].map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
               </select>
             ) : <p className="text-sm text-gray-800 capitalize">{wo.status}</p>}
