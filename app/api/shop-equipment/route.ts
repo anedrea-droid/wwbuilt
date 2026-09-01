@@ -1,26 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 
-export async function GET() {
-  const result = await (await getPool()).query(`
-    SELECT
-      se.id,
-      se.work_order_id,
-      se.equipment_description,
-      se.acquisition_type,
-      se.acquired_date,
-      se.condition_notes,
-      se.status,
-      se.asking_price,
-      se.sale_price,
-      se.sale_date,
-      se.created_at,
-      wo.date_in,
-      wo.id AS wo_number
-    FROM shop_equipment se
-    LEFT JOIN work_orders wo ON wo.id = se.work_order_id
-    ORDER BY se.acquired_date DESC NULLS LAST, se.created_at DESC
-  `)
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const workOrderId = searchParams.get('workOrderId')
+  const pool = await getPool()
+  const result = workOrderId
+    ? await pool.query(`
+        SELECT
+          se.id, se.work_order_id, se.equipment_description, se.acquisition_type,
+          se.acquired_date, se.condition_notes, se.status, se.asking_price,
+          se.sale_price, se.sale_date, se.created_at, wo.date_in, wo.id AS wo_number
+        FROM shop_equipment se
+        LEFT JOIN work_orders wo ON wo.id = se.work_order_id
+        WHERE se.work_order_id = $1
+        ORDER BY se.acquired_date DESC NULLS LAST, se.created_at DESC
+      `, [workOrderId])
+    : await pool.query(`
+        SELECT
+          se.id, se.work_order_id, se.equipment_description, se.acquisition_type,
+          se.acquired_date, se.condition_notes, se.status, se.asking_price,
+          se.sale_price, se.sale_date, se.created_at, wo.date_in, wo.id AS wo_number
+        FROM shop_equipment se
+        LEFT JOIN work_orders wo ON wo.id = se.work_order_id
+        ORDER BY se.acquired_date DESC NULLS LAST, se.created_at DESC
+      `)
   return NextResponse.json(result.rows)
 }
 
