@@ -77,6 +77,7 @@ function ReportsPageInner() {
   const [outstanding, setOutstanding] = useState<Record<string, unknown>[]>([])
   const [noCharge, setNoCharge] = useState<Record<string, unknown>[]>([])
   const [needsReminder, setNeedsReminder] = useState<Record<string, unknown>[]>([])
+  const [deniedService, setDeniedService] = useState<Record<string, unknown>[]>([])
   const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
   const [atShop, setAtShop] = useState<Record<string, unknown>[]>([])
   const [refHistory, setRefHistory] = useState<Record<string, unknown>[]>([])
@@ -241,8 +242,12 @@ function ReportsPageInner() {
       setPartsReport(Array.isArray(pr) ? pr : [])
     }
     if (tab === 'admin') {
-      const nr = await fetch(base + 'type=needs-reminder').then(x => x.json())
+      const [nr, ds] = await Promise.all([
+        fetch(base + 'type=needs-reminder').then(x => x.json()),
+        fetch(base + 'type=denied-service').then(x => x.json()),
+      ])
       setNeedsReminder(Array.isArray(nr) ? nr : [])
+      setDeniedService(Array.isArray(ds) ? ds : [])
     }
     setLoading(false)
   }, [tab, fromDate, toDate])
@@ -1439,6 +1444,75 @@ function ReportsPageInner() {
                       <td colSpan={7} className="pt-2 text-gray-600">{needsReminder.length} work order{needsReminder.length !== 1 ? 's' : ''} need follow-up</td>
                       <td className="pt-2 text-right text-orange-600">
                         {fmt(needsReminder.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Denied Service - Diagnostic Fee Only" subtitle="Work orders where the customer declined the recommended repair but still owes a diagnostic fee for the evaluation">
+            {deniedService.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No denied-service jobs on record</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                      <th className="pb-2 pr-3">WO#</th>
+                      <th className="pb-2 pr-3">Customer</th>
+                      <th className="pb-2 pr-3">Phone</th>
+                      <th className="pb-2 pr-3">Equipment</th>
+                      <th className="pb-2 pr-3">Technician</th>
+                      <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 pr-3 text-right">Fee Charged</th>
+                      <th className="pb-2 pr-3 text-right">Paid</th>
+                      <th className="pb-2 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deniedService.map(row => {
+                      const charged = Number(row.amount_charged) || 0
+                      const paid = Number(row.amount_paid) || 0
+                      return (
+                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="py-1.5 pr-3">
+                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                              {String(row.order_number)}
+                            </Link>
+                          </td>
+                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3">
+                            {row.customer_phone ? (
+                              <a href={'tel:' + String(row.customer_phone).replace(/[^0-9+]/g, '')} className="text-orange-600 hover:underline text-xs">
+                                {String(row.customer_phone)}
+                              </a>
+                            ) : <span className="text-gray-400 text-xs">-</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                          <td className="py-1.5 pr-3">
+                            <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
+                              {String(row.technician || 'Unassigned')}
+                            </span>
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                          <td className="py-1.5 pr-3 text-right">{charged > 0 ? fmt(charged) : <span className="text-gray-400 text-xs">not invoiced</span>}</td>
+                          <td className="py-1.5 pr-3 text-right text-green-600">{paid > 0 ? fmt(paid) : '-'}</td>
+                          <td className="py-1.5 text-right font-semibold text-orange-600">
+                            {charged > 0 ? fmt(charged - paid) : <span className="text-gray-400 text-xs">-</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td colSpan={6} className="pt-2 text-gray-600">{deniedService.length} denied-service job{deniedService.length !== 1 ? 's' : ''}</td>
+                      <td className="pt-2 text-right">{fmt(deniedService.reduce((s, r) => s + (Number(r.amount_charged) || 0), 0))}</td>
+                      <td className="pt-2 text-right text-green-600">{fmt(deniedService.reduce((s, r) => s + (Number(r.amount_paid) || 0), 0))}</td>
+                      <td className="pt-2 text-right text-orange-600">
+                        {fmt(deniedService.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
                       </td>
                     </tr>
                   </tfoot>
