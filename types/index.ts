@@ -1,71 +1,97 @@
-export type CustomerSource = 'own' | 'referral'
-export type WorkOrderStatus = 'pending' | 'in-progress' | 'waiting-parts' | 'complete' | 'at-shop' | 'picked-up' | 'donated' | 'abandoned'
-export type TechName = 'Wade' | 'Wayne'
-export type PaymentMethod = 'cash' | 'check' | 'card' | 'other' | ''
-export type PartStatus = 'ordered' | 'received'
+import { Pool } from 'pg'
 
-export interface Customer {
-  id: string
-  name: string
-  phone: string
-  email: string
-  source: CustomerSource
-  referralShop: string
-  notes: string
-  createdAt: string
+let _pool: Pool | null = null
+
+export function getPool(): Pool {
+  if (!_pool) {
+    _pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl:
+        process.env.DATABASE_URL?.includes('railway') ||
+        process.env.NODE_ENV === 'production'
+          ? { rejectUnauthorized: false }
+          : false,
+    })
+  }
+  return _pool
 }
 
-export interface Equipment {
-  id: string
-  customerId: string
-  type: string
-  make: string
-  model: string
-  serialNumber: string
-  notes: string
-  createdAt: string
+export function toCustomer(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone,
+    email: r.email,
+    source: r.source,
+    referralShop: r.referral_shop,
+    notes: r.notes,
+    createdAt: r.created_at,
+  }
 }
 
-export interface Part {
-  id: string
-  workOrderId: string
-  name: string
-  partNumber: string
-  supplier: string
-  unitCost: number
-  quantity: number
-  status: PartStatus
-  dateOrdered: string
-  dateReceived: string
+export function toEquipment(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    customerId: r.customer_id,
+    type: r.type,
+    make: r.make,
+    model: r.model,
+    year: r.year,
+    serialNumber: r.serial_number,
+    color: r.color,
+    notes: r.notes,
+    createdAt: r.created_at,
+  }
 }
 
-export interface WorkOrder {
-  id: string
-  orderNumber: string
-  customerId: string
-  equipmentId: string
-  status: WorkOrderStatus
-  technician: TechName
-  complaint: string
-  diagnosis: string
-  workDone: string
-  laborHours: number
-  laborRate: number
-  dateIn: string
-  dateComplete: string
-  datePickedUp: string
-  notes: string
-  paymentMethod: PaymentMethod
-  amountCharged: number
-  amountPaid: number
-  createdAt: string
-  updatedAt: string
+export function toWorkOrder(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    orderNumber: r.order_number,
+    customerId: r.customer_id,
+    equipmentId: r.equipment_id,
+    source: r.source,
+    referralShop: r.referral_shop,
+    serviceDenied: r.service_denied ?? false,
+    status: r.status,
+    technician: r.technician,
+    complaint: r.complaint,
+    diagnosis: r.diagnosis,
+    workDone: r.work_done,
+    laborHours: r.labor_hours,
+    laborRate: r.labor_rate,
+    dateIn: r.date_in,
+    dateComplete: r.date_complete,
+    datePickedUp: r.date_picked_up,
+    notes: r.notes,
+    paymentMethod: r.payment_method,
+    amountCharged: r.amount_charged,
+    amountPaid: r.amount_paid,
+    referralPickupDate: r.referral_pickup_date,
+    referralDropoffDate: r.referral_dropoff_date,
+    shopPaymentAmount: r.shop_payment_amount,
+    shopPaymentDate: r.shop_payment_date,
+    shopPaymentReceived: r.shop_payment_received ?? false,
+    commissionPaid: r.commission_paid ?? false,
+    commissionPaidDate: r.commission_paid_date,
+    createdAt: r.created_at,
+  }
 }
 
-export interface DB {
-  customers: Customer[]
-  equipment: Equipment[]
-  workOrders: WorkOrder[]
-  parts: Part[]
-  orderCounter: number
+export function toPart(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    workOrderId: r.work_order_id,
+    name: r.name,
+    partNumber: r.part_number,
+    supplier: r.supplier,
+    quantity: r.quantity,
+    cost: r.cost ?? 0,
+    price: r.price ?? 0,
+    status: r.status,
+    dateOrdered: r.date_ordered,
+    dateReceived: r.date_received,
+    notes: r.notes,
+    createdAt: r.created_at,
+  }
 }
