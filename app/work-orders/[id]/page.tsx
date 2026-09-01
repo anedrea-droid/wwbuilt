@@ -5,7 +5,7 @@ import Link from 'next/link'
 
 interface WorkOrder {
   id: string; orderNumber: string; customerId: string; equipmentId: string
-  source?: string; referralShop?: string
+  source?: string; referralShop?: string; serviceDenied?: boolean
   status: string; technician: string; complaint: string; diagnosis: string
   workDone: string; laborHours: number; laborRate: number; dateIn: string
   referralPickupDate?: string; referralDropoffDate?: string
@@ -32,7 +32,6 @@ const STATUS_COLORS: Record<string, string> = {
   'picked-up':     'bg-gray-100 text-gray-800',
   'abandoned':     'bg-red-100 text-red-800',
   'donated':       'bg-purple-100 text-purple-800',
-  'denied':        'bg-pink-100 text-pink-800',
 }
 
 export default function WorkOrderDetail() {
@@ -159,6 +158,7 @@ export default function WorkOrderDetail() {
       status: form.status,
       source: form.source,
       referral_shop: form.referralShop,
+      service_denied: form.serviceDenied,
       technician: form.technician,
       complaint: form.complaint,
       diagnosis: form.diagnosis,
@@ -480,7 +480,7 @@ export default function WorkOrderDetail() {
             className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
             Print Work Order
           </button>
-          {isMobile && customer?.phone && (wo.status === 'complete' || wo.status === 'denied' || ((wo.source || customer.source) === 'referral' && wo.status === 'at-shop')) && (
+          {isMobile && customer?.phone && (wo.status === 'complete' || wo.serviceDenied || ((wo.source || customer.source) === 'referral' && wo.status === 'at-shop')) && (
             <button onClick={sendPickupReminder}
               className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700">
               Text Pickup Reminder
@@ -523,6 +523,17 @@ export default function WorkOrderDetail() {
           <Link href="/shop-equipment" className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 whitespace-nowrap">
             View in Shop Equipment
           </Link>
+        </div>
+      )}
+
+      {wo.serviceDenied && (
+        <div className="bg-pink-50 border-2 border-pink-200 rounded-xl p-4">
+          <p className="font-semibold text-pink-800">Customer Denied Service - Diagnostic Fee Only</p>
+          <p className="text-sm text-pink-700 mt-1">
+            This customer declined the recommended repair. The equipment status below still reflects where it
+            physically is (e.g. ready for pickup, at the referral shop, etc.) - this just flags that only the
+            diagnostic fee is owed, not a full repair invoice.
+          </p>
         </div>
       )}
 
@@ -596,21 +607,26 @@ export default function WorkOrderDetail() {
             {editing ? (
               <select value={form.status || ''} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 className="w-full border rounded px-2 py-1 text-sm">
-                {[
-                  { value: 'pending', label: 'pending' },
-                  { value: 'in-progress', label: 'in-progress' },
-                  { value: 'waiting-parts', label: 'waiting-parts' },
-                  { value: 'complete', label: 'complete' },
-                  { value: 'denied', label: 'denied - service declined (diagnostic fee only)' },
-                  { value: 'at-shop', label: 'at-shop' },
-                  { value: 'picked-up', label: 'picked-up' },
-                  { value: 'abandoned', label: 'abandoned' },
-                  { value: 'donated', label: 'donated' },
-                ].map(s => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
+                {['pending','in-progress','waiting-parts','complete','at-shop','picked-up','abandoned','donated'].map(s => (
+                  <option key={s} value={s}>{s}</option>
                 ))}
               </select>
             ) : <p className="text-sm text-gray-800 capitalize">{wo.status}</p>}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Service Denied?</label>
+            {editing ? (
+              <label className="flex items-center gap-2 h-[30px] text-sm">
+                <input type="checkbox" checked={!!form.serviceDenied}
+                  onChange={e => setForm(f => ({ ...f, serviceDenied: e.target.checked }))}
+                  className="w-4 h-4 accent-pink-600" />
+                <span>Customer declined repair - diagnostic fee only</span>
+              </label>
+            ) : wo.serviceDenied ? (
+              <span className="inline-block text-xs px-2 py-0.5 rounded-full font-medium bg-pink-100 text-pink-800">
+                Denied Service - Diagnostic Fee Only
+              </span>
+            ) : <p className="text-sm text-gray-400">-</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Technician</label>
