@@ -34,7 +34,7 @@ export async function PATCH(
       'referral_pickup_date', 'referral_dropoff_date',
       'shop_payment_amount', 'shop_payment_date', 'shop_payment_received',
       'commission_paid', 'commission_paid_date',
-      'source', 'referral_shop',
+      'source', 'referral_shop', 'service_denied',
     ]
     const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date','commission_paid_date']
     const numericFields = ['labor_hours','labor_rate','amount_charged','amount_paid','shop_payment_amount']
@@ -72,7 +72,7 @@ export async function PATCH(
       )
     } else if (body.date_complete) {
       await pool.query(
-        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up', 'denied')",
+        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
         [id]
       )
     }
