@@ -72,7 +72,7 @@ export async function PATCH(
       )
     } else if (body.date_complete) {
       await pool.query(
-        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
+        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up', 'denied')",
         [id]
       )
     }
