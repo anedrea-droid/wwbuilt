@@ -48,6 +48,21 @@ function daysOpen(dateIn: unknown) {
   return diff >= 0 ? diff : null
 }
 
+const UNPAID_REASONS: { id: string; label: string; cls: string }[] = [
+  { id: 'never-paid', label: 'Returned - Never Paid', cls: 'bg-red-100 text-red-700' },
+  { id: 'abandoned',  label: 'Abandoned',             cls: 'bg-amber-100 text-amber-800' },
+  { id: 'donated',    label: 'Donated',               cls: 'bg-purple-100 text-purple-700' },
+  { id: 'no-charge',  label: 'No Charge',             cls: 'bg-gray-100 text-gray-600' },
+]
+function unpaidValue(r: Record<string, unknown>) {
+  const charged = Number(r.amount_charged) || 0
+  const shopAmt = Number(r.shop_payment_amount) || 0
+  if (charged > 0) return { value: charged, est: false }
+  if (shopAmt > 0) return { value: shopAmt, est: false }
+  const est = (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 80) + (Number(r.parts_charged) || 0)
+  return { value: est, est: true }
+}
+
 function ReportsPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -76,6 +91,8 @@ function ReportsPageInner() {
   const [payouts, setPayouts] = useState<Record<string, unknown>[]>([])
   const [outstanding, setOutstanding] = useState<Record<string, unknown>[]>([])
   const [noCharge, setNoCharge] = useState<Record<string, unknown>[]>([])
+  const [unpaidWork, setUnpaidWork] = useState<Record<string, unknown>[]>([])
+  const [unpaidFilter, setUnpaidFilter] = useState<string>('all')
   const [needsReminder, setNeedsReminder] = useState<Record<string, unknown>[]>([])
   const [deniedService, setDeniedService] = useState<Record<string, unknown>[]>([])
   const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
@@ -204,14 +221,16 @@ function ReportsPageInner() {
     setLoading(true)
     const base = '/api/reports?'
     if (tab === 'financial') {
-      const [p, o, nc] = await Promise.all([
+      const [p, o, nc, np] = await Promise.all([
         fetch(base + 'type=payouts&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
         fetch(base + 'type=outstanding').then(x => x.json()),
         fetch(base + 'type=no-charge').then(x => x.json()),
+        fetch(base + 'type=never-paid').then(x => x.json()),
       ])
       setPayouts(Array.isArray(p) ? p : [])
       setOutstanding(Array.isArray(o) ? o : [])
       setNoCharge(Array.isArray(nc) ? nc : [])
+      setUnpaidWork(Array.isArray(np) ? np : [])
     }
     if (tab === 'referral') {
       const [a, h] = await Promise.all([
@@ -608,6 +627,119 @@ function ReportsPageInner() {
                 </table>
               </div>
             )}
+          </Section>
+
+          {/* Not Paid - every way Cavin's didn't get paid */}
+          <Section title="Not Paid - Work Done, No Payment Received" subtitle="Every work order we did not get paid for: returned to a shop and never paid, abandoned, donated, or done for no charge. Full history. Values are invoice totals before any referral shop share, or an estimate (labor + parts charged) when no invoice amount was entered.">
+            {unpaidWork.length === 0 ? <Empty /> : (() => {
+              const filteredUnpaid = unpaidFilter === 'all' ? unpaidWork : unpaidWork.filter(r => r.reason === unpaidFilter)
+              const totalsFor = (rows: Record<string, unknown>[]) => rows.reduce<{ value: number; parts: number; unpaid: number }>((t, r) => {
+                const v = unpaidValue(r).value
+                const paid = Number(r.amount_paid) || 0
+                return { value: t.value + v, parts: t.parts + (Number(r.parts_cost) || 0), unpaid: t.unpaid + Math.max(v - paid, 0) }
+              }, { value: 0, parts: 0, unpaid: 0 })
+              const tot = totalsFor(filteredUnpaid)
+              return (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2 print:hidden">
+                    <button onClick={() => setUnpaidFilter('all')}
+                      className={'text-xs px-3 py-1 rounded-full border ' + (unpaidFilter === 'all' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+                      All ({unpaidWork.length})
+                    </button>
+                    {UNPAID_REASONS.map(rs => {
+                      const n = unpaidWork.filter(r => r.reason === rs.id).length
+                      return (
+                        <button key={rs.id} onClick={() => setUnpaidFilter(rs.id)}
+                          className={'text-xs px-3 py-1 rounded-full border ' + (unpaidFilter === rs.id ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+                          {rs.label} ({n})
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {UNPAID_REASONS.map(rs => {
+                      const rows = unpaidWork.filter(r => r.reason === rs.id)
+                      const t = totalsFor(rows)
+                      return (
+                        <div key={rs.id} className="border rounded-lg p-2.5">
+                          <span className={'text-xs px-2 py-0.5 rounded font-medium ' + rs.cls}>{rs.label}</span>
+                          <div className="text-lg font-bold text-gray-800 mt-1.5">{rows.length}</div>
+                          <div className="text-xs text-gray-500">Value {fmt(t.value)}</div>
+                          <div className="text-xs text-red-500">Parts cost {fmt(t.parts)}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {filteredUnpaid.length === 0 ? <Empty /> : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                            <th className="pb-2 pr-3">WO#</th>
+                            <th className="pb-2 pr-3">Customer</th>
+                            <th className="pb-2 pr-3">Type</th>
+                            <th className="pb-2 pr-3">Equipment</th>
+                            <th className="pb-2 pr-3">Reason</th>
+                            <th className="pb-2 pr-3">Date</th>
+                            <th className="pb-2 pr-3">Note</th>
+                            <th className="pb-2 pr-3 text-right">Value</th>
+                            <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                            <th className="pb-2 text-right">Not Paid</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredUnpaid.map(row => {
+                            const isRef = row.customer_source === 'referral'
+                            const rs = UNPAID_REASONS.find(x => x.id === row.reason)
+                            const { value, est } = unpaidValue(row)
+                            const paid = Number(row.amount_paid) || 0
+                            const when = row.never_paid_date || row.referral_dropoff_date || row.date_complete || row.date_in
+                            return (
+                              <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                <td className="py-1.5 pr-3">
+                                  <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                                    {String(row.order_number)}
+                                  </Link>
+                                </td>
+                                <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                                <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
+                                  {isRef
+                                    ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
+                                    : <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
+                                </td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                                <td className="py-1.5 pr-3 whitespace-nowrap">
+                                  <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (rs ? rs.cls : 'bg-gray-100 text-gray-600')}>{rs ? rs.label : String(row.reason)}</span>
+                                </td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{fmtDate(when)}</td>
+                                <td className="py-1.5 pr-3 text-gray-500 text-xs">{row.never_paid_note ? String(row.never_paid_note) : '-'}</td>
+                                <td className="py-1.5 pr-3 text-right">
+                                  {value > 0
+                                    ? (est ? <span className="text-gray-400 text-xs italic">est. {fmt(value)}</span> : fmt(value))
+                                    : <span className="text-gray-400 text-xs">-</span>}
+                                </td>
+                                <td className="py-1.5 pr-3 text-right text-red-500">{Number(row.parts_cost) > 0 ? fmt(row.parts_cost) : '-'}</td>
+                                <td className="py-1.5 text-right font-semibold text-orange-600">{value > 0 ? fmt(Math.max(value - paid, 0)) : '-'}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 font-semibold">
+                            <td colSpan={7} className="pt-2 text-gray-600">{filteredUnpaid.length} work order{filteredUnpaid.length !== 1 ? 's' : ''}</td>
+                            <td className="pt-2 pr-3 text-right">{fmt(tot.value)}</td>
+                            <td className="pt-2 pr-3 text-right text-red-600">{fmt(tot.parts)}</td>
+                            <td className="pt-2 text-right text-orange-600">{fmt(tot.unpaid)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </Section>
 
         </div>
@@ -1014,7 +1146,8 @@ function ReportsPageInner() {
                       const isEst = invoice === 0
                       const estTotal = laborEst + partsCharged
                       const afterParts = invoice > 0 ? invoice - partsCharged : estTotal - partsCharged
-                      const paidToShop = afterParts > 0 ? afterParts * 0.20 : 0
+                      const neverPaid = row.never_paid === true
+                      const paidToShop = !neverPaid && afterParts > 0 ? afterParts * 0.20 : 0
                       return (
                         <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-1.5 pr-3">
@@ -1025,6 +1158,7 @@ function ReportsPageInner() {
                           <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
                           <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
                             <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Other Shop')}</span>
+                            {neverPaid && <span className="ml-1 bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Never Paid</span>}
                           </td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
@@ -1045,6 +1179,7 @@ function ReportsPageInner() {
                       <td colSpan={8} className="pt-2 text-gray-600">Total Paid to Shop (All Shops)</td>
                       <td className="pt-2 text-right text-orange-600">
                         {fmt(refHistory.reduce((s, row) => {
+                          if (row.never_paid === true) return s
                           const shopAmt = Number(row.shop_payment_amount) || 0
                           const amtCharged = Number(row.amount_charged) || 0
                           const partsCharged = Number(row.parts_charged) || 0
