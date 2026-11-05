@@ -35,8 +35,9 @@ export async function PATCH(
       'shop_payment_amount', 'shop_payment_date', 'shop_payment_received',
       'commission_paid', 'commission_paid_date',
       'source', 'referral_shop', 'service_denied',
+      'never_paid', 'never_paid_date', 'never_paid_note',
     ]
-    const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date','commission_paid_date']
+    const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date','commission_paid_date','never_paid_date']
     const numericFields = ['labor_hours','labor_rate','amount_charged','amount_paid','shop_payment_amount']
     for (const key of allowed) {
       if (body[key] !== undefined) {
@@ -116,6 +117,26 @@ export async function PATCH(
       // payment_method: mark as referral shop payment
       await pool.query(
         "UPDATE work_orders SET payment_method = 'Referral Shop' WHERE id = $1 AND (payment_method IS NULL OR payment_method = '')",
+        [id]
+      )
+    }
+
+    // Never-paid write-off (equipment went back and we never got paid).
+    //   Flagged:   stamp today's date if none was given, and if the job was still
+    //              sitting as 'at-shop', close it out as gone (picked-up).
+    //   Un-flagged: clear the date and note so it can be re-marked cleanly later.
+    if (body.never_paid === true || body.never_paid === 'true') {
+      await pool.query(
+        'UPDATE work_orders SET never_paid_date = CURRENT_DATE WHERE id = $1 AND never_paid_date IS NULL',
+        [id]
+      )
+      await pool.query(
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status = 'at-shop'",
+        [id]
+      )
+    } else if (body.never_paid === false || body.never_paid === 'false') {
+      await pool.query(
+        'UPDATE work_orders SET never_paid_date = NULL, never_paid_note = NULL WHERE id = $1',
         [id]
       )
     }
