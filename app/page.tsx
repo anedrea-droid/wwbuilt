@@ -16,6 +16,8 @@ interface WorkOrderCard {
   technician: TechName
   complaint: string
   dateIn: string
+  serviceDenied?: boolean
+  neverPaid?: boolean
   customer?: { id: string; name: string; phone: string; source: string; referralShop: string }
   equipment?: { type: string; make: string; model: string }
   parts?: { id: string; status: string }[]
@@ -30,7 +32,6 @@ const STATUS_CFG: Record<string, { label: string; cls: string; dot: string }> = 
   'abandoned':     { label: 'Abandoned - WW Property', cls: 'bg-red-100 text-red-700',    dot: 'bg-red-400' },
   'at-shop':       { label: 'At Referral Shop',    cls: 'bg-purple-100 text-purple-700',dot: 'bg-purple-500' },
   'picked-up':     { label: 'Picked Up',           cls: 'bg-slate-100 text-slate-600',  dot: 'bg-slate-400' },
-  'denied':        { label: 'Denied - Fee Due',    cls: 'bg-pink-100 text-pink-700',    dot: 'bg-pink-500' },
 }
 
 const TECH_CFG: Record<string, string> = {
@@ -53,7 +54,7 @@ export default function WorkOrdersDashboard() {
       .catch(() => setLoading(false))
   }, [])
 
-  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned' && o.status !== 'denied'
+  const isActive = (o: WorkOrderCard) => o.status !== 'picked-up' && o.status !== 'donated' && o.status !== 'abandoned'
 
   const filtered = orders.filter(o => {
     if (tab === 'active')  return isActive(o)
@@ -62,7 +63,7 @@ export default function WorkOrdersDashboard() {
     if (tab === 'parts')   return o.status === 'waiting-parts'
     if (tab === 'ready')   return o.status === 'complete'
     if (tab === 'atshop')  return o.status === 'at-shop'
-    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned' || o.status === 'denied'
+    if (tab === 'done')    return o.status === 'picked-up' || o.status === 'donated' || o.status === 'abandoned'
     return true
   })
 
@@ -152,6 +153,16 @@ export default function WorkOrdersDashboard() {
                           <span className={cn("w-1.5 h-1.5 rounded-full inline-block", cfg.dot)} />
                           {cfg.label}
                         </span>
+                        {wo.serviceDenied && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-pink-100 text-pink-700">
+                            Denied Service
+                          </span>
+                        )}
+                        {wo.neverPaid && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">
+                            Never Paid
+                          </span>
+                        )}
                       </div>
                       <ChevronRight className="h-4 w-4 text-slate-300" />
                     </div>
