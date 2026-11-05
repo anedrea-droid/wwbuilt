@@ -6,6 +6,7 @@ import Link from 'next/link'
 interface WorkOrder {
   id: string; orderNumber: string; customerId: string; equipmentId: string
   source?: string; referralShop?: string; serviceDenied?: boolean
+  neverPaid?: boolean; neverPaidDate?: string; neverPaidNote?: string
   status: string; technician: string; complaint: string; diagnosis: string
   workDone: string; laborHours: number; laborRate: number; dateIn: string
   referralPickupDate?: string; referralDropoffDate?: string
@@ -56,6 +57,9 @@ export default function WorkOrderDetail() {
   const [showWWModal, setShowWWModal] = useState(false)
   const [wwAcqType, setWwAcqType] = useState('abandoned')
   const [wwNotes, setWwNotes] = useState('')
+  const [showNeverPaid, setShowNeverPaid] = useState(false)
+  const [npNote, setNpNote] = useState('')
+  const [npDate, setNpDate] = useState(new Date().toISOString().slice(0, 10))
   const [shopEquipment, setShopEquipment] = useState<{
     id: string; acquisition_type: string; acquired_date: string | null
     condition_notes: string | null; status: string
@@ -96,7 +100,7 @@ export default function WorkOrderDetail() {
     return { ...data, dateIn: dateIn, dateComplete: d(data.dateComplete),
       datePickedUp: d(data.datePickedUp), referralPickupDate: d(data.referralPickupDate) || dateIn,
       referralDropoffDate: d(data.referralDropoffDate), shopPaymentDate: d(data.shopPaymentDate),
-      commissionPaidDate: d(data.commissionPaidDate) }
+      commissionPaidDate: d(data.commissionPaidDate), neverPaidDate: d(data.neverPaidDate) }
   }
 
   function loadShopEquipment() {
@@ -150,6 +154,28 @@ export default function WorkOrderDetail() {
     const woData = normalizeDates(await woRes.json())
     setWo(woData)
     setForm(woData)
+  }
+
+  async function markNeverPaid() {
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ never_paid: true, never_paid_date: npDate || null, never_paid_note: npNote.trim() || null })
+    })
+    const updated = normalizeDates(await res.json())
+    setWo(updated); setForm(updated)
+    setShowNeverPaid(false); setNpNote('')
+  }
+
+  async function undoNeverPaid() {
+    if (!confirm('Remove the Never Paid mark from this work order? It will go back to showing as owed if it is still unpaid.')) return
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ never_paid: false })
+    })
+    const updated = normalizeDates(await res.json())
+    setWo(updated); setForm(updated)
   }
 
   async function saveWorkOrder() {
@@ -486,6 +512,12 @@ export default function WorkOrderDetail() {
               Text Pickup Reminder
             </button>
           )}
+          {!wo.neverPaid && wo.status !== 'abandoned' && wo.status !== 'donated' && (
+            <button onClick={() => setShowNeverPaid(true)}
+              className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-lg hover:bg-amber-200">
+              Mark Never Paid
+            </button>
+          )}
           {wo.status !== 'abandoned' && wo.status !== 'donated' && wo.status !== 'picked-up' && (
             <button onClick={() => setShowWWModal(true)}
               className="text-xs bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-200">
@@ -523,6 +555,23 @@ export default function WorkOrderDetail() {
           <Link href="/shop-equipment" className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 whitespace-nowrap">
             View in Shop Equipment
           </Link>
+        </div>
+      )}
+
+      {wo.neverPaid && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-red-800">Never Paid - Equipment Returned, Payment Never Received</p>
+            <p className="text-sm text-red-700 mt-1">
+              Marked {wo.neverPaidDate ? String(wo.neverPaidDate).slice(0, 10) : '-'}. This job is left out of Outstanding Invoices,
+              the Trip Report and the payout totals, and is listed under Reports &gt; Financial &gt; Not Paid.
+            </p>
+            {wo.neverPaidNote && <p className="text-sm text-red-700 mt-1">Note: {wo.neverPaidNote}</p>}
+          </div>
+          <button onClick={undoNeverPaid}
+            className="text-xs bg-white text-red-700 border border-red-300 px-3 py-1.5 rounded-lg hover:bg-red-100 whitespace-nowrap">
+            Undo - this was a mistake
+          </button>
         </div>
       )}
 
@@ -1313,6 +1362,35 @@ export default function WorkOrderDetail() {
           Delete this work order
         </button>
       </div>
+
+      {showNeverPaid && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Mark Never Paid</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Use this when the equipment has gone back and we were never paid for it. This is different from
+              Abandoned or Donated - the equipment does <strong>not</strong> become WW property. The job stops showing as owed
+              and is listed on the Not Paid report instead. You can undo it later.
+            </p>
+            <div className="mb-3">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Date</label>
+              <input type="date" value={npDate} onChange={e => setNpDate(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Note (optional)</label>
+              <input value={npNote} onChange={e => setNpNote(e.target.value)} placeholder="e.g. shop says customer never paid; may be an entry error" className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={markNeverPaid} className="flex-1 bg-amber-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-amber-700">
+                Confirm
+              </button>
+              <button onClick={() => setShowNeverPaid(false)} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showWWModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
