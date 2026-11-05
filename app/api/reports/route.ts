@@ -24,7 +24,7 @@ export async function GET(req: Request) {
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date >= $1 ' +
         'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
-        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
         'AND (' +
         '  ((COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') AND wo.status IN (\'complete\', \'picked-up\'))' +
         '  OR (COALESCE(wo.source, c.source) = \'referral\' AND wo.status IN (\'at-shop\', \'complete\', \'picked-up\'))' +
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
-        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
         'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
         'AND (' +
         '  (' +
@@ -85,7 +85,7 @@ export async function GET(req: Request) {
         '  SELECT MAX(cl.created_at) as last_text_at FROM contact_log cl ' +
         '  WHERE cl.work_order_id = wo.id AND cl.type = \'text\'' +
         ') lastText ON true ' +
-        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
         'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
         'AND (' +
         '  (' +
@@ -136,7 +136,7 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
         'WHERE COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date IS NOT NULL ' +
-        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
         'GROUP BY DATE_TRUNC(\'month\', COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date) ' +
         'ORDER BY DATE_TRUNC(\'month\', COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date) DESC ' +
         'LIMIT 24'
@@ -161,7 +161,7 @@ export async function GET(req: Request) {
         'WHERE COALESCE(wo.source, c.source) = \'referral\' ' +
         'AND wo.referral_dropoff_date IS NOT NULL ' +
         'AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
-        'AND wo.status NOT IN (\'donated\', \'abandoned\') ' +
+        'AND wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
         'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
         'ORDER BY wo.referral_dropoff_date ASC'
       )
@@ -196,6 +196,7 @@ export async function GET(req: Request) {
         const outstanding = await pool.query(
           baseSelect +
           'AND wo.referral_dropoff_date::date < $1 ' +
+          'AND COALESCE(wo.never_paid, false) = false ' +
           'AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
           'GROUP BY wo.id, c.name, c.referral_shop, e.type, e.make, e.model ' +
           'ORDER BY wo.referral_dropoff_date ASC',
@@ -235,6 +236,7 @@ export async function GET(req: Request) {
         'SELECT wo.id, wo.order_number, wo.status, wo.date_complete, wo.amount_charged, ' +
         'wo.referral_pickup_date, wo.referral_dropoff_date, ' +
         'wo.shop_payment_received, wo.shop_payment_amount, wo.shop_payment_date, ' +
+        'wo.never_paid, wo.never_paid_date, ' +
         'wo.labor_hours, wo.labor_rate, ' +
         'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, ' +
@@ -301,6 +303,37 @@ export async function GET(req: Request) {
         'LEFT JOIN shop_equipment se ON se.work_order_id = wo.id ' +
         'WHERE wo.status IN (\'donated\', \'abandoned\') ' +
         'ORDER BY wo.date_in DESC'
+      )
+      return NextResponse.json(rows)
+    }
+
+    if (type === 'never-paid') {
+      // Every work order Cavin's did NOT get paid for, one way or another:
+      //   never-paid  - flagged on the work order (e.g. returned to a referral shop, never paid)
+      //   donated / abandoned - equipment became WW property
+      //   no-charge   - deliberately done for free
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, wo.technician, ' +
+        'wo.referral_dropoff_date, wo.never_paid_date, wo.never_paid_note, ' +
+        'wo.amount_charged, wo.amount_paid, wo.shop_payment_amount, wo.labor_hours, wo.labor_rate, wo.payment_method, ' +
+        'CASE ' +
+        '  WHEN wo.never_paid = true THEN \'never-paid\' ' +
+        '  WHEN wo.status = \'donated\' THEN \'donated\' ' +
+        '  WHEN wo.status = \'abandoned\' THEN \'abandoned\' ' +
+        '  ELSE \'no-charge\' ' +
+        'END as reason, ' +
+        'c.name as customer_name, c.phone as customer_phone, ' +
+        'COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'COALESCE(SUM(p.cost * p.quantity), 0) as parts_cost, ' +
+        'COALESCE(SUM(p.price * p.quantity), 0) as parts_charged ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
+        'WHERE (wo.never_paid = true OR wo.status IN (\'donated\', \'abandoned\') OR wo.payment_method = \'no charge\') ' +
+        'GROUP BY wo.id, c.name, c.phone, c.source, c.referral_shop, e.type, e.make, e.model ' +
+        'ORDER BY COALESCE(wo.never_paid_date::text, NULLIF(wo.referral_dropoff_date::text, \'\'), NULLIF(wo.date_complete::text, \'\'), NULLIF(wo.date_in::text, \'\')) DESC NULLS LAST'
       )
       return NextResponse.json(rows)
     }
