@@ -168,7 +168,7 @@ export default function WorkOrderDetail() {
   }
 
   async function undoNeverPaid() {
-    if (!confirm('Remove the Never Paid mark from this work order? It will go back to showing as owed if it is still unpaid.')) return
+    if (!confirm('Remove the No Payment Recorded mark from this work order? It will go back to showing as owed if it is still unpaid.')) return
     const res = await fetch('/api/work-orders/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -512,10 +512,10 @@ export default function WorkOrderDetail() {
               Text Pickup Reminder
             </button>
           )}
-          {!wo.neverPaid && wo.status !== 'abandoned' && wo.status !== 'donated' && (
+          {!wo.neverPaid && ['at-shop', 'complete', 'picked-up'].includes(wo.status) && (
             <button onClick={() => setShowNeverPaid(true)}
               className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-lg hover:bg-amber-200">
-              Mark Never Paid
+              Picked Up - No Payment
             </button>
           )}
           {wo.status !== 'abandoned' && wo.status !== 'donated' && wo.status !== 'picked-up' && (
@@ -561,16 +561,17 @@ export default function WorkOrderDetail() {
       {wo.neverPaid && (
         <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="font-semibold text-red-800">Never Paid - Equipment Returned, Payment Never Received</p>
+            <p className="font-semibold text-red-800">Picked Up - No Payment Recorded</p>
             <p className="text-sm text-red-700 mt-1">
-              Marked {wo.neverPaidDate ? String(wo.neverPaidDate).slice(0, 10) : '-'}. This job is left out of Outstanding Invoices,
-              the Trip Report and the payout totals, and is listed under Reports &gt; Financial &gt; Not Paid.
+              Marked {wo.neverPaidDate ? String(wo.neverPaidDate).slice(0, 10) : '-'}. The equipment is gone but no payment was ever recorded
+              (this may be an entry error). This job is left out of Outstanding Invoices, the Trip Report and the payout totals,
+              and is listed under Reports &gt; Financial &gt; Not Paid.
             </p>
             {wo.neverPaidNote && <p className="text-sm text-red-700 mt-1">Note: {wo.neverPaidNote}</p>}
           </div>
           <button onClick={undoNeverPaid}
             className="text-xs bg-white text-red-700 border border-red-300 px-3 py-1.5 rounded-lg hover:bg-red-100 whitespace-nowrap">
-            Undo - this was a mistake
+            Undo - payment was received / mistake
           </button>
         </div>
       )}
@@ -1366,11 +1367,11 @@ export default function WorkOrderDetail() {
       {showNeverPaid && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">Mark Never Paid</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Picked Up - No Payment Recorded</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Use this when the equipment has gone back and we were never paid for it. This is different from
-              Abandoned or Donated - the equipment does <strong>not</strong> become WW property. The job stops showing as owed
-              and is listed on the Not Paid report instead. You can undo it later.
+              Use this when the equipment is no longer here (the customer picked it up, or it went back to the referral shop)
+              but no payment was ever recorded - it may just be an entry error. If the equipment is still in the shop,
+              don't use this: after about 60 days use <strong>Mark as WW Property</strong> and choose Abandoned instead.
             </p>
             <div className="mb-3">
               <label className="text-xs font-medium text-gray-500 block mb-1">Date</label>
@@ -1378,7 +1379,7 @@ export default function WorkOrderDetail() {
             </div>
             <div className="mb-4">
               <label className="text-xs font-medium text-gray-500 block mb-1">Note (optional)</label>
-              <input value={npNote} onChange={e => setNpNote(e.target.value)} placeholder="e.g. shop says customer never paid; may be an entry error" className="w-full border rounded-md px-3 py-2 text-sm" />
+              <input value={npNote} onChange={e => setNpNote(e.target.value)} placeholder="e.g. not in shop at Thursday check; shop never paid" className="w-full border rounded-md px-3 py-2 text-sm" />
             </div>
             <div className="flex gap-2">
               <button onClick={markNeverPaid} className="flex-1 bg-amber-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-amber-700">
