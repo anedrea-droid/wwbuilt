@@ -338,6 +338,58 @@ export async function GET(req: Request) {
       return NextResponse.json(rows)
     }
 
+    if (type === 'thursday-check') {
+      // Equipment you would have texted about last Thursday, but didn't:
+      // still unpaid, ready (or returned to a referral shop) BEFORE last Thursday, and no
+      // pickup-reminder text logged since then. Since you only skip the text when the
+      // customer has no phone or the equipment isn't there, these are the "equipment is
+      // probably gone, nothing recorded as paid" jobs.
+      const tz = 'America/Chicago'
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date())
+      const get = (t: string) => parts.find(x => x.type === t)?.value || ''
+      const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'))
+      const daysBack = ((dow - 4 + 7) % 7) || 7
+      const todayUtc = Date.UTC(Number(get('year')), Number(get('month')) - 1, Number(get('day')))
+      const cutoff = new Date(todayUtc - daysBack * 86400000).toISOString().slice(0, 10)
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.date_complete, wo.referral_dropoff_date, ' +
+        'c.name as customer_name, c.phone as customer_phone, ' +
+        '(c.phone IS NOT NULL AND TRIM(c.phone) <> \'\') as has_phone, ' +
+        'COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
+        '     ELSE wo.amount_charged END as amount_charged, ' +
+        'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN 0 ' +
+        '     ELSE COALESCE(wo.amount_paid, 0) END as amount_paid, ' +
+        'lastText.last_text_at ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN LATERAL (' +
+        '  SELECT MAX(cl.created_at) as last_text_at FROM contact_log cl ' +
+        '  WHERE cl.work_order_id = wo.id AND cl.type = \'text\'' +
+        ') lastText ON true ' +
+        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
+        'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
+        'AND (' +
+        '  (' +
+        '    (COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') ' +
+        '    AND wo.status IN (\'complete\', \'picked-up\') ' +
+        '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
+        '  ) OR (' +
+        '    COALESCE(wo.source, c.source) = \'referral\' ' +
+        '    AND wo.referral_dropoff_date IS NOT NULL ' +
+        '    AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
+        '  )' +
+        ') ' +
+        'AND COALESCE(NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date < $1::date ' +
+        'AND (lastText.last_text_at IS NULL OR lastText.last_text_at < ($1::date)::timestamp AT TIME ZONE \'America/Chicago\') ' +
+        'ORDER BY wo.date_in ASC',
+        [cutoff]
+      )
+      return NextResponse.json({ rows, cutoff })
+    }
+
     if (type === 'no-charge') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.date_complete, wo.status, wo.complaint, ' +
