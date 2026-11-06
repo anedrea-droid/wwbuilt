@@ -123,7 +123,8 @@ export async function PATCH(
 
     // Never-paid write-off (equipment went back and we never got paid).
     //   Flagged:   stamp today's date if none was given, and if the job was still
-    //              sitting as 'at-shop', close it out as gone (picked-up).
+    //              showing 'at-shop' or 'complete' (ready for pickup), close it out as
+    //              gone (picked-up) - the equipment is no longer here.
     //   Un-flagged: clear the date and note so it can be re-marked cleanly later.
     if (body.never_paid === true || body.never_paid === 'true') {
       await pool.query(
@@ -131,7 +132,7 @@ export async function PATCH(
         [id]
       )
       await pool.query(
-        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status = 'at-shop'",
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status IN ('at-shop', 'complete')",
         [id]
       )
     } else if (body.never_paid === false || body.never_paid === 'false') {
