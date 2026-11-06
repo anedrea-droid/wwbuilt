@@ -72,7 +72,7 @@ async function markAbandonedFromReport(row: Record<string, unknown>) {
     body: JSON.stringify({ status: 'abandoned' }),
   })
   if (!patch.ok) return false
-  const desc = [row.year, row.make, row.model, row.equipment_type].filter(Boolean).map(String).join(' ')
+  const desc = [row.make, row.model, row.equipment_type].filter(Boolean).map(String).join(' ')
   const se = await fetch('/api/shop-equipment', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -128,6 +128,8 @@ function ReportsPageInner() {
   const [unpaidWork, setUnpaidWork] = useState<Record<string, unknown>[]>([])
   const [unpaidFilter, setUnpaidFilter] = useState<string>('all')
   const [needsReminder, setNeedsReminder] = useState<Record<string, unknown>[]>([])
+  const [loadError, setLoadError] = useState('')
+  const [invoiceFill, setInvoiceFill] = useState<{ rows: Record<string, unknown>[]; backupCount: number }>({ rows: [], backupCount: 0 })
   const [thursdayCheck, setThursdayCheck] = useState<{ rows: Record<string, unknown>[]; cutoff: string }>({ rows: [], cutoff: '' })
   const [deniedService, setDeniedService] = useState<Record<string, unknown>[]>([])
   const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
@@ -255,12 +257,21 @@ function ReportsPageInner() {
     const load = useCallback(async () => {
     setLoading(true)
     const base = '/api/reports?'
+    // Collect any error a report sends back so it shows on screen instead of looking like "no records".
+    const errors: string[] = []
+    const getJson = (url: string) => fetch(url)
+      .then(x => x.json())
+      .then(d => {
+        if (d && typeof d === 'object' && !Array.isArray(d) && d.error) errors.push(String(d.error))
+        return d
+      })
+      .catch(e => { errors.push(String(e)); return [] })
     if (tab === 'financial') {
       const [p, o, nc, np] = await Promise.all([
-        fetch(base + 'type=payouts&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
-        fetch(base + 'type=outstanding').then(x => x.json()),
-        fetch(base + 'type=no-charge').then(x => x.json()),
-        fetch(base + 'type=never-paid').then(x => x.json()),
+        getJson(base + 'type=payouts&from=' + fromDate + '&to=' + toDate),
+        getJson(base + 'type=outstanding'),
+        getJson(base + 'type=no-charge'),
+        getJson(base + 'type=never-paid'),
       ])
       setPayouts(Array.isArray(p) ? p : [])
       setOutstanding(Array.isArray(o) ? o : [])
@@ -269,17 +280,17 @@ function ReportsPageInner() {
     }
     if (tab === 'referral') {
       const [a, h] = await Promise.all([
-        fetch(base + 'type=referral-at-shop').then(x => x.json()),
-        fetch(base + 'type=referral-history').then(x => x.json()),
+        getJson(base + 'type=referral-at-shop'),
+        getJson(base + 'type=referral-history'),
       ])
       setAtShop(Array.isArray(a) ? a : [])
       setRefHistory(Array.isArray(h) ? h : [])
     }
     if (tab === 'workorders') {
       const [c, op, da] = await Promise.all([
-        fetch(base + 'type=completed&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
-        fetch(base + 'type=open').then(x => x.json()),
-        fetch(base + 'type=donated-abandoned').then(x => x.json()),
+        getJson(base + 'type=completed&from=' + fromDate + '&to=' + toDate),
+        getJson(base + 'type=open'),
+        getJson(base + 'type=donated-abandoned'),
       ])
       setCompleted(Array.isArray(c) ? c : [])
       setOpenOrders(Array.isArray(op) ? op : [])
@@ -287,24 +298,27 @@ function ReportsPageInner() {
     }
     if (tab === 'parts') {
       const [pp, r, pr] = await Promise.all([
-        fetch(base + 'type=parts-pending').then(x => x.json()),
-        fetch(base + 'type=revenue').then(x => x.json()),
-        fetch(base + 'type=parts-report&from=' + fromDate + '&to=' + toDate).then(x => x.json()),
+        getJson(base + 'type=parts-pending'),
+        getJson(base + 'type=revenue'),
+        getJson(base + 'type=parts-report&from=' + fromDate + '&to=' + toDate),
       ])
       setPendingParts(Array.isArray(pp) ? pp : [])
       setRevenue(Array.isArray(r) ? r : [])
       setPartsReport(Array.isArray(pr) ? pr : [])
     }
     if (tab === 'admin') {
-      const [nr, ds, tc] = await Promise.all([
-        fetch(base + 'type=needs-reminder').then(x => x.json()),
-        fetch(base + 'type=denied-service').then(x => x.json()),
-        fetch(base + 'type=thursday-check').then(x => x.json()),
+      const [nr, ds, tc, inv] = await Promise.all([
+        getJson(base + 'type=needs-reminder'),
+        getJson(base + 'type=denied-service'),
+        getJson(base + 'type=thursday-check'),
+        getJson('/api/admin/invoice-backfill'),
       ])
+      setInvoiceFill(inv && Array.isArray(inv.rows) ? inv : { rows: [], backupCount: 0 })
       setNeedsReminder(Array.isArray(nr) ? nr : [])
       setDeniedService(Array.isArray(ds) ? ds : [])
       setThursdayCheck(tc && Array.isArray(tc.rows) ? tc : { rows: [], cutoff: '' })
     }
+    setLoadError(errors.length ? Array.from(new Set(errors)).join(' | ') : '')
     setLoading(false)
   }, [tab, fromDate, toDate])
 
@@ -358,6 +372,13 @@ function ReportsPageInner() {
 
       {loading && <p className="text-sm text-gray-400 text-center py-8">Loading...</p>}
 
+      {!loading && loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 print:hidden">
+          <p className="font-semibold">A report could not load, so some sections below may look empty when they are not.</p>
+          <p className="text-xs mt-1 break-words">{loadError}</p>
+        </div>
+      )}
+
       {/* Print-only header */}
       <div className="hidden print:block mb-4 pb-3 border-b">
         <div className="text-xl font-bold text-gray-900">WW Small Engine - Reports</div>
@@ -374,17 +395,16 @@ function ReportsPageInner() {
         <div className="space-y-5">
 
           {/* Payout Summary */}
-          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Jobs paid after 2026-07-01 go 100% to whoever is assigned (50/50 if Both); jobs paid on or before that date still split 60/40 Wade/Wayne to match how they were actually paid out.">
+          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Direct jobs are listed by the date paid (older jobs without one use the completion date). Jobs paid after 2026-07-01 go 100% to whoever is assigned (50/50 if Both); jobs paid on or before that date still split 60/40 Wade/Wayne to match how they were actually paid out.">
             {payouts.length === 0 ? <Empty /> : (() => {
               const totalPartsCostAll = payouts.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
 
               const calcRow = (row: Record<string, unknown>, isRef: boolean) => {
                 const partsCharged = Number(row.parts_charged) || 0
-                const amtCharged = Number(row.amount_charged) || 0
                 const amtPaid = Number(row.amount_paid) || 0
                 const shopAmt = Number(row.shop_payment_amount) || 0
                 const shopReceived = row.shop_payment_received === true
-                const isPaid = isRef ? shopReceived : (amtCharged > 0 && amtPaid > 0)
+                const isPaid = isRef ? shopReceived : (amtPaid > 0)
                 const paidAmount = isRef ? shopAmt : amtPaid
                 const afterParts = paidAmount - partsCharged
                 const refCut = isRef && afterParts > 0 ? afterParts * 0.20 : 0
@@ -1741,6 +1761,85 @@ function ReportsPageInner() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Completed Jobs With No Invoice Amount" subtitle="Finished jobs where the invoice total was never entered, which leaves reports and receipts guessing. Filling copies in the shop payment or amount already paid if there is one, otherwise the labor + parts estimate. No Charge, donated, abandoned, denied-service and no-payment-recorded jobs are skipped. You can undo the last fill.">
+            {invoiceFill.rows.length === 0 ? (
+              <p className="text-sm text-green-600 text-center py-4">Every finished job has an invoice amount</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                        <th className="pb-2 pr-3">WO#</th>
+                        <th className="pb-2 pr-3">Customer</th>
+                        <th className="pb-2 pr-3">Type</th>
+                        <th className="pb-2 pr-3">Status</th>
+                        <th className="pb-2 pr-3 text-right">Estimate</th>
+                        <th className="pb-2 pr-3 text-right">Paid</th>
+                        <th className="pb-2 pr-3 text-right">Would Fill With</th>
+                        <th className="pb-2">Based On</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceFill.rows.map(row => (
+                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                          <td className="py-1.5 pr-3">
+                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
+                          </td>
+                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                          <td className="py-1.5 pr-3 text-xs">{row.customer_source === 'referral' ? 'Referral' : 'Direct'}</td>
+                          <td className="py-1.5 pr-3 text-xs">{statusLabel(row.status)}</td>
+                          <td className="py-1.5 pr-3 text-right text-gray-500">{fmt(row.estimate)}</td>
+                          <td className="py-1.5 pr-3 text-right text-green-600">{Number(row.amount_paid) > 0 ? fmt(row.amount_paid) : '-'}</td>
+                          <td className="py-1.5 pr-3 text-right font-semibold">{fmt(row.proposed)}</td>
+                          <td className="py-1.5 text-xs text-gray-500">{String(row.based_on)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold">
+                        <td colSpan={6} className="pt-2 text-gray-600">{invoiceFill.rows.length} job{invoiceFill.rows.length !== 1 ? 's' : ''}</td>
+                        <td className="pt-2 pr-3 text-right">{fmt(invoiceFill.rows.reduce((t, r) => t + (Number(r.proposed) || 0), 0))}</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <div className="flex items-center gap-3 print:hidden">
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Fill the invoice amount on ' + invoiceFill.rows.length + ' work order(s) as shown? You can undo this afterwards.')) return
+                      const res = await fetch('/api/admin/invoice-backfill', { method: 'POST' })
+                      const data = await res.json()
+                      if (!res.ok) alert('Something went wrong: ' + (data.error || 'unknown error'))
+                      else alert('Filled ' + data.updated + ' invoice amount(s).')
+                      load()
+                    }}
+                    className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600">
+                    Fill {invoiceFill.rows.length} invoice{invoiceFill.rows.length !== 1 ? 's' : ''}
+                  </button>
+                </div>
+              </div>
+            )}
+            {invoiceFill.backupCount > 0 && (
+              <div className="mt-3 pt-3 border-t flex items-center gap-3 flex-wrap print:hidden">
+                <span className="text-xs text-gray-500">{invoiceFill.backupCount} invoice amount{invoiceFill.backupCount !== 1 ? 's were' : ' was'} filled in earlier.</span>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Undo the earlier fill? Invoices you changed since then are left alone.')) return
+                    const res = await fetch('/api/admin/invoice-backfill', { method: 'DELETE' })
+                    const data = await res.json()
+                    if (!res.ok) alert('Something went wrong: ' + (data.error || 'unknown error'))
+                    else alert('Restored ' + data.restored + ' invoice(s) to empty.')
+                    load()
+                  }}
+                  className="text-xs bg-white text-gray-700 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50">
+                  Undo last fill
+                </button>
               </div>
             )}
           </Section>
