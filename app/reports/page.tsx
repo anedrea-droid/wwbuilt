@@ -49,7 +49,7 @@ function daysOpen(dateIn: unknown) {
 }
 
 const UNPAID_REASONS: { id: string; label: string; cls: string }[] = [
-  { id: 'never-paid', label: 'Returned - Never Paid', cls: 'bg-red-100 text-red-700' },
+  { id: 'never-paid', label: 'Picked Up - No Payment', cls: 'bg-red-100 text-red-700' },
   { id: 'abandoned',  label: 'Abandoned',             cls: 'bg-amber-100 text-amber-800' },
   { id: 'donated',    label: 'Donated',               cls: 'bg-purple-100 text-purple-700' },
   { id: 'no-charge',  label: 'No Charge',             cls: 'bg-gray-100 text-gray-600' },
@@ -61,6 +61,15 @@ function unpaidValue(r: Record<string, unknown>) {
   if (shopAmt > 0) return { value: shopAmt, est: false }
   const est = (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 80) + (Number(r.parts_charged) || 0)
   return { value: est, est: true }
+}
+
+async function markNoPaymentRecorded(id: string, note: string) {
+  const res = await fetch('/api/work-orders/' + id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ never_paid: true, never_paid_date: new Date().toISOString().slice(0, 10), never_paid_note: note }),
+  })
+  return res.ok
 }
 
 function ReportsPageInner() {
@@ -94,6 +103,7 @@ function ReportsPageInner() {
   const [unpaidWork, setUnpaidWork] = useState<Record<string, unknown>[]>([])
   const [unpaidFilter, setUnpaidFilter] = useState<string>('all')
   const [needsReminder, setNeedsReminder] = useState<Record<string, unknown>[]>([])
+  const [thursdayCheck, setThursdayCheck] = useState<{ rows: Record<string, unknown>[]; cutoff: string }>({ rows: [], cutoff: '' })
   const [deniedService, setDeniedService] = useState<Record<string, unknown>[]>([])
   const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
   const [atShop, setAtShop] = useState<Record<string, unknown>[]>([])
@@ -261,12 +271,14 @@ function ReportsPageInner() {
       setPartsReport(Array.isArray(pr) ? pr : [])
     }
     if (tab === 'admin') {
-      const [nr, ds] = await Promise.all([
+      const [nr, ds, tc] = await Promise.all([
         fetch(base + 'type=needs-reminder').then(x => x.json()),
         fetch(base + 'type=denied-service').then(x => x.json()),
+        fetch(base + 'type=thursday-check').then(x => x.json()),
       ])
       setNeedsReminder(Array.isArray(nr) ? nr : [])
       setDeniedService(Array.isArray(ds) ? ds : [])
+      setThursdayCheck(tc && Array.isArray(tc.rows) ? tc : { rows: [], cutoff: '' })
     }
     setLoading(false)
   }, [tab, fromDate, toDate])
@@ -630,7 +642,7 @@ function ReportsPageInner() {
           </Section>
 
           {/* Not Paid - every way Cavin's didn't get paid */}
-          <Section title="Not Paid - Work Done, No Payment Received" subtitle="Every work order we did not get paid for: returned to a shop and never paid, abandoned, donated, or done for no charge. Full history. Values are invoice totals before any referral shop share, or an estimate (labor + parts charged) when no invoice amount was entered.">
+          <Section title="Not Paid - Work Done, No Payment Received" subtitle="Every work order we did not get paid for: equipment picked up or returned with no payment recorded, abandoned, donated, or done for no charge. Full history. Values are invoice totals before any referral shop share, or an estimate (labor + parts charged) when no invoice amount was entered.">
             {unpaidWork.length === 0 ? <Empty /> : (() => {
               const filteredUnpaid = unpaidFilter === 'all' ? unpaidWork : unpaidWork.filter(r => r.reason === unpaidFilter)
               const totalsFor = (rows: Record<string, unknown>[]) => rows.reduce<{ value: number; parts: number; unpaid: number }>((t, r) => {
@@ -1158,7 +1170,7 @@ function ReportsPageInner() {
                           <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
                           <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
                             <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Other Shop')}</span>
-                            {neverPaid && <span className="ml-1 bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Never Paid</span>}
+                            {neverPaid && <span className="ml-1 bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">No Payment Recorded</span>}
                           </td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
@@ -1515,6 +1527,107 @@ function ReportsPageInner() {
 
       {!loading && tab === 'admin' && (
         <div className="space-y-5">
+          <Section title="Equipment Not in the Shop? - Unpaid and Not Texted Since Thursday" subtitle={'Still unpaid, ready before ' + (thursdayCheck.cutoff || 'last Thursday') + ', and no pickup-reminder text logged since then. Because you only skip the Thursday text when the equipment is not there (or there is no phone number), these are probably picked up with no payment recorded. Check each one, then mark it or enter the payment.'}>
+            {(() => {
+              const withPhone = thursdayCheck.rows.filter(r => r.has_phone)
+              const noPhone = thursdayCheck.rows.filter(r => !r.has_phone)
+              const renderRow = (row: Record<string, unknown>, canMark: boolean) => {
+                const isRef = row.customer_source === 'referral'
+                const charged = Number(row.amount_charged) || 0
+                const paid = Number(row.amount_paid) || 0
+                const readyDate = row.referral_dropoff_date || row.date_complete || row.date_in
+                return (
+                  <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                    <td className="py-1.5 pr-3">
+                      <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
+                        {String(row.order_number)}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                    <td className="py-1.5 pr-3">
+                      {isRef
+                        ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
+                        : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
+                    </td>
+                    <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                    <td className="py-1.5 pr-3 text-xs">{statusLabel(row.status)}</td>
+                    <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(readyDate)}</td>
+                    <td className="py-1.5 pr-3 text-xs">
+                      {row.last_text_at
+                        ? <span className="text-gray-500">{fmtDate(row.last_text_at)}</span>
+                        : <span className="text-red-500 font-medium">Never texted</span>}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-semibold text-orange-600">
+                      {charged > 0 ? fmt(charged - paid) : <span className="text-gray-400 text-xs">not invoiced</span>}
+                    </td>
+                    <td className="py-1.5 text-right whitespace-nowrap print:hidden">
+                      {canMark ? (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Mark ' + String(row.order_number) + ' as Picked Up - No Payment Recorded? Use Undo on the work order if this was a mistake.')) return
+                            const ok = await markNoPaymentRecorded(String(row.id), 'Not in shop at Thursday check (no text since ' + thursdayCheck.cutoff + ')')
+                            if (ok) load()
+                          }}
+                          className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2 py-1 rounded hover:bg-amber-200">
+                          Picked up - no payment
+                        </button>
+                      ) : <span className="text-gray-400 text-xs">open WO to check</span>}
+                    </td>
+                  </tr>
+                )
+              }
+              const head = (
+                <thead>
+                  <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                    <th className="pb-2 pr-3">WO#</th>
+                    <th className="pb-2 pr-3">Customer</th>
+                    <th className="pb-2 pr-3">Type</th>
+                    <th className="pb-2 pr-3">Equipment</th>
+                    <th className="pb-2 pr-3">Status</th>
+                    <th className="pb-2 pr-3">Ready Since</th>
+                    <th className="pb-2 pr-3">Last Text</th>
+                    <th className="pb-2 pr-3 text-right">Balance</th>
+                    <th className="pb-2 text-right print:hidden">Action</th>
+                  </tr>
+                </thead>
+              )
+              return (
+                <div className="space-y-4">
+                  {withPhone.length === 0 ? (
+                    <p className="text-sm text-green-600 text-center py-4">Everything unpaid with a phone number was texted since {thursdayCheck.cutoff || 'last Thursday'} - nothing to check</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        {head}
+                        <tbody>{withPhone.map(r => renderRow(r, true))}</tbody>
+                        <tfoot>
+                          <tr className="border-t-2 font-semibold">
+                            <td colSpan={7} className="pt-2 text-gray-600">{withPhone.length} work order{withPhone.length !== 1 ? 's' : ''} to check</td>
+                            <td className="pt-2 pr-3 text-right text-orange-600">
+                              {fmt(withPhone.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                  {noPhone.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">No phone number on file ({noPhone.length}) - you could not have texted these, so the missing text does not tell us anything. Check them by hand.</p>
+                      <div className="overflow-x-auto opacity-80">
+                        <table className="w-full text-sm">
+                          {head}
+                          <tbody>{noPhone.map(r => renderRow(r, false))}</tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </Section>
+
           <Section title="Unpaid - No Recent Reminder Sent" subtitle="Completed (in-house) and At Shop (referral) work orders that are still unpaid and haven't had a pickup reminder text sent in the last 10 days. Use this to know who to follow up with.">
             {needsReminder.length === 0 ? (
               <p className="text-sm text-green-600 text-center py-4">Everyone unpaid has been texted recently - nothing to follow up on</p>
