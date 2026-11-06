@@ -63,6 +63,31 @@ function unpaidValue(r: Record<string, unknown>) {
   return { value: est, est: true }
 }
 
+const ABANDON_AFTER_DAYS = 60
+
+async function markAbandonedFromReport(row: Record<string, unknown>) {
+  const patch = await fetch('/api/work-orders/' + row.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'abandoned' }),
+  })
+  if (!patch.ok) return false
+  const desc = [row.year, row.make, row.model, row.equipment_type].filter(Boolean).map(String).join(' ')
+  const se = await fetch('/api/shop-equipment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      work_order_id: row.id,
+      equipment_description: desc || 'Unknown Equipment',
+      acquisition_type: 'abandoned',
+      acquired_date: new Date().toISOString().slice(0, 10),
+      condition_notes: 'Marked abandoned from the Thursday check report',
+      status: 'available',
+    }),
+  })
+  return se.ok
+}
+
 async function markNoPaymentRecorded(id: string, note: string) {
   const res = await fetch('/api/work-orders/' + id, {
     method: 'PATCH',
@@ -1527,11 +1552,13 @@ function ReportsPageInner() {
 
       {!loading && tab === 'admin' && (
         <div className="space-y-5">
-          <Section title="Equipment Not in the Shop? - Unpaid and Not Texted Since Thursday" subtitle={'Still unpaid, ready before ' + (thursdayCheck.cutoff || 'last Thursday') + ', and no pickup-reminder text logged since then. Because you only skip the Thursday text when the equipment is not there (or there is no phone number), these are probably picked up with no payment recorded. Check each one, then mark it or enter the payment.'}>
+          <Section title="Equipment Not in the Shop? - Unpaid and Not Texted Since Thursday" subtitle={'Still unpaid, ready before ' + (thursdayCheck.cutoff || 'last Thursday') + ', and no pickup-reminder text logged since then. Because you only skip the Thursday text when the equipment is not there (or there is no phone number), these are probably picked up with no payment recorded. Check each one, then mark it or enter the payment. Equipment that is still here after ' + ABANDON_AFTER_DAYS + '+ days can be marked Abandoned.'}>
             {(() => {
               const withPhone = thursdayCheck.rows.filter(r => r.has_phone)
               const noPhone = thursdayCheck.rows.filter(r => !r.has_phone)
               const renderRow = (row: Record<string, unknown>, canMark: boolean) => {
+                const daysReady = daysOpen(row.referral_dropoff_date || row.date_complete || row.date_in)
+                const canAbandon = daysReady !== null && daysReady >= ABANDON_AFTER_DAYS
                 const isRef = row.customer_source === 'referral'
                 const charged = Number(row.amount_charged) || 0
                 const paid = Number(row.amount_paid) || 0
@@ -1551,7 +1578,10 @@ function ReportsPageInner() {
                     </td>
                     <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
                     <td className="py-1.5 pr-3 text-xs">{statusLabel(row.status)}</td>
-                    <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(readyDate)}</td>
+                    <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">
+                      {fmtDate(readyDate)}
+                      {daysReady !== null && <span className={'ml-1 ' + (canAbandon ? 'text-red-600 font-medium' : 'text-gray-400')}>({daysReady}d)</span>}
+                    </td>
                     <td className="py-1.5 pr-3 text-xs">
                       {row.last_text_at
                         ? <span className="text-gray-500">{fmtDate(row.last_text_at)}</span>
@@ -1561,17 +1591,32 @@ function ReportsPageInner() {
                       {charged > 0 ? fmt(charged - paid) : <span className="text-gray-400 text-xs">not invoiced</span>}
                     </td>
                     <td className="py-1.5 text-right whitespace-nowrap print:hidden">
-                      {canMark ? (
-                        <button
-                          onClick={async () => {
-                            if (!confirm('Mark ' + String(row.order_number) + ' as Picked Up - No Payment Recorded? Use Undo on the work order if this was a mistake.')) return
-                            const ok = await markNoPaymentRecorded(String(row.id), 'Not in shop at Thursday check (no text since ' + thursdayCheck.cutoff + ')')
-                            if (ok) load()
-                          }}
-                          className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2 py-1 rounded hover:bg-amber-200">
-                          Picked up - no payment
-                        </button>
-                      ) : <span className="text-gray-400 text-xs">open WO to check</span>}
+                      <div className="flex gap-1.5 justify-end">
+                        {canMark && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Mark ' + String(row.order_number) + ' as Picked Up - No Payment Recorded? Use Undo on the work order if this was a mistake.')) return
+                              const ok = await markNoPaymentRecorded(String(row.id), 'Not in shop at Thursday check (no text since ' + thursdayCheck.cutoff + ')')
+                              if (ok) load()
+                            }}
+                            className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2 py-1 rounded hover:bg-amber-200">
+                            Picked up - no payment
+                          </button>
+                        )}
+                        {canAbandon && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Mark ' + String(row.order_number) + ' as Abandoned? The equipment becomes WW property and is added to Shop Equipment. Only do this if the equipment is still in the shop.')) return
+                              const ok = await markAbandonedFromReport(row)
+                              if (ok) load()
+                              else alert('Something went wrong marking this abandoned - open the work order and try Mark as WW Property.')
+                            }}
+                            className="text-xs bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-200">
+                            Abandoned
+                          </button>
+                        )}
+                        {!canMark && !canAbandon && <span className="text-gray-400 text-xs">open WO to check</span>}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -1628,9 +1673,9 @@ function ReportsPageInner() {
             })()}
           </Section>
 
-          <Section title="Unpaid - No Recent Reminder Sent" subtitle="Completed (in-house) and At Shop (referral) work orders that are still unpaid and haven't had a pickup reminder text sent in the last 10 days. Use this to know who to follow up with.">
+          <Section title="Newly Ready - Not Texted Yet" subtitle="Unpaid work orders that became ready (or went to the referral shop) since last Thursday and haven't had a pickup text yet. These are the ones to text on your next Thursday round. Older unpaid jobs are in the report above.">
             {needsReminder.length === 0 ? (
-              <p className="text-sm text-green-600 text-center py-4">Everyone unpaid has been texted recently - nothing to follow up on</p>
+              <p className="text-sm text-green-600 text-center py-4">Everything newly ready has been texted - nothing to send</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1641,7 +1686,7 @@ function ReportsPageInner() {
                       <th className="pb-2 pr-3">Phone</th>
                       <th className="pb-2 pr-3">Type</th>
                       <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 pr-3">Ready Since</th>
                       <th className="pb-2 pr-3">Last Text</th>
                       <th className="pb-2 text-right">Balance</th>
                     </tr>
@@ -1672,7 +1717,7 @@ function ReportsPageInner() {
                               : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
                           </td>
                           <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date || row.date_complete || row.date_in)}</td>
                           <td className="py-1.5 pr-3 text-xs">
                             {row.last_text_at
                               ? <span className="text-gray-500">{fmtDate(row.last_text_at)}</span>
@@ -1689,7 +1734,7 @@ function ReportsPageInner() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 font-semibold">
-                      <td colSpan={7} className="pt-2 text-gray-600">{needsReminder.length} work order{needsReminder.length !== 1 ? 's' : ''} need follow-up</td>
+                      <td colSpan={7} className="pt-2 text-gray-600">{needsReminder.length} work order{needsReminder.length !== 1 ? 's' : ''} to text</td>
                       <td className="pt-2 text-right text-orange-600">
                         {fmt(needsReminder.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
                       </td>
