@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 
+// The most recent Thursday strictly before today, in Central time (YYYY-MM-DD).
+// If today is Thursday this is last week's Thursday.
+function lastThursdayCutoff(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date())
+  const get = (t: string) => parts.find(x => x.type === t)?.value || ''
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'))
+  const daysBack = ((dow - 4 + 7) % 7) || 7
+  const todayUtc = Date.UTC(Number(get('year')), Number(get('month')) - 1, Number(get('day')))
+  return new Date(todayUtc - daysBack * 86400000).toISOString().slice(0, 10)
+}
+
 export async function GET(req: Request) {
   const pool = getPool()
   const { searchParams } = new URL(req.url)
@@ -68,6 +79,12 @@ export async function GET(req: Request) {
     }
 
     if (type === 'needs-reminder') {
+      // "Newly ready - not texted yet": unpaid jobs that became ready on or after the most
+      // recent Thursday and haven't had a pickup text since they became ready. Equipment
+      // that has been ready longer is handled by the 'thursday-check' report.
+      // Only jobs where the equipment should still be here (ready for pickup / at the
+      // referral shop) and the customer has a phone number you could text.
+      const cutoff = lastThursdayCutoff()
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, ' +
         'wo.date_complete, wo.referral_dropoff_date, ' +
@@ -85,12 +102,13 @@ export async function GET(req: Request) {
         '  SELECT MAX(cl.created_at) as last_text_at FROM contact_log cl ' +
         '  WHERE cl.work_order_id = wo.id AND cl.type = \'text\'' +
         ') lastText ON true ' +
-        'WHERE wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
+        'WHERE wo.status IN (\'complete\', \'at-shop\') AND COALESCE(wo.never_paid, false) = false ' +
         'AND COALESCE(wo.payment_method, \'\') != \'no charge\' ' +
+        'AND c.phone IS NOT NULL AND TRIM(c.phone) <> \'\' ' +
         'AND (' +
         '  (' +
         '    (COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') ' +
-        '    AND wo.status IN (\'complete\', \'picked-up\') ' +
+        '    AND wo.status = \'complete\' ' +
         '    AND NOT (wo.amount_charged > 0 AND COALESCE(wo.amount_paid, 0) >= wo.amount_charged) ' +
         '  ) OR (' +
         '    COALESCE(wo.source, c.source) = \'referral\' ' +
@@ -98,8 +116,10 @@ export async function GET(req: Request) {
         '    AND (wo.shop_payment_received = false OR wo.shop_payment_received IS NULL) ' +
         '  )' +
         ') ' +
-        'AND (lastText.last_text_at IS NULL OR lastText.last_text_at < NOW() - INTERVAL \'10 days\') ' +
-        'ORDER BY wo.date_in ASC'
+        'AND COALESCE(NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date >= $1::date ' +
+        'AND (lastText.last_text_at IS NULL OR lastText.last_text_at < (COALESCE(NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date)::timestamp AT TIME ZONE \'America/Chicago\') ' +
+        'ORDER BY wo.date_in ASC',
+        [cutoff]
       )
       return NextResponse.json(rows)
     }
@@ -344,19 +364,13 @@ export async function GET(req: Request) {
       // pickup-reminder text logged since then. Since you only skip the text when the
       // customer has no phone or the equipment isn't there, these are the "equipment is
       // probably gone, nothing recorded as paid" jobs.
-      const tz = 'America/Chicago'
-      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date())
-      const get = (t: string) => parts.find(x => x.type === t)?.value || ''
-      const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'))
-      const daysBack = ((dow - 4 + 7) % 7) || 7
-      const todayUtc = Date.UTC(Number(get('year')), Number(get('month')) - 1, Number(get('day')))
-      const cutoff = new Date(todayUtc - daysBack * 86400000).toISOString().slice(0, 10)
+      const cutoff = lastThursdayCutoff()
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.date_complete, wo.referral_dropoff_date, ' +
         'c.name as customer_name, c.phone as customer_phone, ' +
         '(c.phone IS NOT NULL AND TRIM(c.phone) <> \'\') as has_phone, ' +
         'COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
-        'e.type as equipment_type, e.make, e.model, ' +
+        'e.type as equipment_type, e.make, e.model, e.year, ' +
         'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
         '     ELSE wo.amount_charged END as amount_charged, ' +
         'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN 0 ' +
