@@ -160,7 +160,7 @@ export default function WorkOrdersDashboard() {
                         )}
                         {wo.neverPaid && (
                           <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">
-                            Never Paid
+                            No Payment Recorded
                           </span>
                         )}
                       </div>
