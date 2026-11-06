@@ -4,7 +4,7 @@ import { getPool } from '@/lib/db'
 // The most recent Thursday strictly before today, in Central time (YYYY-MM-DD).
 // If today is Thursday this is last week's Thursday.
 function lastThursdayCutoff(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date())
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date())
   const get = (t: string) => parts.find(x => x.type === t)?.value || ''
   const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'))
   const daysBack = ((dow - 4 + 7) % 7) || 7
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     if (type === 'payouts') {
       const { rows } = await pool.query(
         'SELECT wo.id, wo.order_number, wo.date_complete, wo.referral_dropoff_date, wo.date_in, ' +
-        'COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
+        'COALESCE(NULLIF(wo.payment_date::text,\'\'), NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date as effective_date, ' +
         'wo.amount_charged, wo.amount_paid, wo.labor_hours, wo.labor_rate, wo.technician, ' +
         'wo.shop_payment_amount, wo.shop_payment_received, wo.status, ' +
         'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
@@ -33,8 +33,8 @@ export async function GET(req: Request) {
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN parts p ON p.work_order_id = wo.id ' +
-        'WHERE COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date >= $1 ' +
-        'AND COALESCE(NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
+        'WHERE COALESCE(NULLIF(wo.payment_date::text,\'\'), NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date >= $1 ' +
+        'AND COALESCE(NULLIF(wo.payment_date::text,\'\'), NULLIF(wo.date_complete::text,\'\'), NULLIF(wo.referral_dropoff_date::text,\'\'), NULLIF(wo.date_in::text,\'\'))::date <= $2 ' +
         'AND wo.status NOT IN (\'donated\', \'abandoned\') AND COALESCE(wo.never_paid, false) = false ' +
         'AND (' +
         '  ((COALESCE(wo.source, c.source) IS NULL OR COALESCE(wo.source, c.source) != \'referral\') AND wo.status IN (\'complete\', \'picked-up\'))' +
@@ -370,7 +370,7 @@ export async function GET(req: Request) {
         'c.name as customer_name, c.phone as customer_phone, ' +
         '(c.phone IS NOT NULL AND TRIM(c.phone) <> \'\') as has_phone, ' +
         'COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
-        'e.type as equipment_type, e.make, e.model, e.year, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
         'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN COALESCE(NULLIF(wo.shop_payment_amount,0), wo.amount_charged) ' +
         '     ELSE wo.amount_charged END as amount_charged, ' +
         'CASE WHEN COALESCE(wo.source, c.source) = \'referral\' THEN 0 ' +
