@@ -10,13 +10,13 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: "WW Small Engine",
-  description: "Wade & Wayne Small Engine Repair - Shop Management",
+  title: "Cavin's Small Engine Repair",
+  description: "Cavin's Small Engine Repair - Shop Management",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "WW Engine",
+    title: "Cavin's",
   },
   icons: {
     icon: [

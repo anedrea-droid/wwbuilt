@@ -32,7 +32,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-sm">
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-slate-800">WW Small Engine</h1>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/logo.png" alt="Cavin's Small Engine Repair" className="h-28 w-28 mx-auto mb-3 rounded-full" />
+          <h1 className="text-2xl font-bold text-slate-800">Cavin&apos;s Small Engine Repair</h1>
           <p className="text-slate-500 text-sm mt-1">Shop Management</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">

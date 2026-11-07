@@ -6,7 +6,7 @@ interface EquipMake { id: string; name: string }
 
 export default function SettingsPage() {
   const [laborRate, setLaborRate] = useState('80')
-  const [shopName, setShopName] = useState('WW Small Engine')
+  const [shopName, setShopName] = useState("Cavin's Small Engine Repair")
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 

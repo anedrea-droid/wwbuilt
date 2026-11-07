@@ -319,7 +319,7 @@ export default function WorkOrderDetail() {
     const totalCharge = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged)
       : (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
         + parts.reduce((s, p) => s + Number(p.price) * Number(p.quantity), 0)
-    const html = '<!DOCTYPE html><html><head><title>WW Small Engine - Shop Receipt</title>'
+    const html = '<!DOCTYPE html><html><head><title>Cavin\'s Small Engine Repair - Shop Receipt</title>'
       + '<style>'
       + 'body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;padding:20px;color:#222;}'
       + 'h1{font-size:22px;margin:0;}'
@@ -338,8 +338,8 @@ export default function WorkOrderDetail() {
       + '@media print{body{margin:20px;}}'
       + '</style></head><body>'
       + '<div class="header">'
-      + '<h1>WW Small Engine</h1>'
-      + '<div class="sub">Shop Return Receipt</div>'
+      + '<div style="display:flex;align-items:center;gap:12px;"><img src="' + window.location.origin + '/icons/logo.png" style="width:64px;height:64px;" />'
+      + '<div><h1>Cavin\'s Small Engine Repair</h1><div class="sub">Shop Return Receipt</div></div></div>'
       + '</div>'
       + '<div class="grid">'
       + '<div class="section"><div class="label">Work Order</div><div class="value">' + (wo.orderNumber || '') + '</div></div>'
@@ -397,7 +397,8 @@ export default function WorkOrderDetail() {
       + '<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">Print</button>'
       + '</div>'
       + '<div class="header">'
-      + '<div><div class="shop-name">WW Small Engine</div><div class="sub">Shop Work Order</div></div>'
+      + '<div style="display:flex;align-items:center;gap:12px;"><img src="' + window.location.origin + '/icons/logo.png" style="width:64px;height:64px;" />'
+      + '<div><div class="shop-name">Cavin\'s Small Engine Repair</div><div class="sub">Shop Work Order</div></div></div>'
       + '<div><div class="wo-number">' + (wo.orderNumber || '') + '</div>'
       + '<div class="wo-customer">' + (customer?.name || '') + '</div></div>'
       + '</div>'
@@ -428,22 +429,32 @@ export default function WorkOrderDetail() {
   function sendPickupReminder() {
     if (!wo || !customer?.phone) return
     const equipDesc = equipment
-      ? [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ')
+      ? [equipment.make, equipment.model, equipment.type].filter(Boolean).join(' ')
       : 'your equipment'
     const firstName = (customer.name || '').split(' ')[0] || 'there'
     const isRef = (wo.source || customer.source) === 'referral'
 
+    // Amount still owed by the customer. Invoice total (or the estimate if none saved yet)
+    // minus anything already paid. Referral customers pay the referral shop at pickup.
+    const invoiceTotal = invoiceNow()
+    const alreadyPaid = isRef ? 0 : (Number(wo.amountPaid) || 0)
+    const owed = wo.paymentMethod === 'no charge' ? 0 : Math.max(invoiceTotal - alreadyPaid, 0)
+    const amountSentence = owed > 0.004 ? ' Amount due: $' + owed.toFixed(2) + '.' : ''
+
     let message: string
     if (isRef) {
       const shopName = wo.referralShop || customer.referralShop || 'the shop'
-      message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
-        + equipDesc + ' is completed and back at ' + shopName + ', ready for pickup. Thanks!'
+      // Pickup deadlines set by individual referral shops (days). Add other shops here if they have one.
+      const POLICY_DAYS: Record<string, number> = { 'seguin small engine': 30 }
+      const policyDays = POLICY_DAYS[shopName.trim().toLowerCase()]
+      const policySentence = policyDays
+        ? ' ' + shopName + ' requires equipment to be picked up within ' + policyDays + ' days or they begin a lien process.'
+        : ''
+      message = 'Hi ' + firstName + ', this is Cavin\'s Small Engine Repair. Your ' + equipDesc
+        + ' is finished and ready for pickup at ' + shopName + '.' + amountSentence + policySentence + ' Thank you!'
     } else {
-      const partsTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
-      const laborTotal = (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
-      const amount = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : laborTotal + partsTotal
-      message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
-        + equipDesc + ' is ready for pickup! Total due: $' + amount.toFixed(2) + '. Thanks!'
+      message = 'Hi ' + firstName + ', this is Cavin\'s Small Engine Repair. Your ' + equipDesc
+        + ' is ready for pickup.' + amountSentence + ' Thank you!'
     }
 
     const digits = customer.phone.replace(/[^0-9+]/g, '')

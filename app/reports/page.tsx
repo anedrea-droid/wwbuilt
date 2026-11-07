@@ -176,7 +176,7 @@ function ReportsPageInner() {
     const w = window.open('', '_blank')
     if (!w) return
     w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}h3{font-size:13px;margin:12px 0 4px;color:#1d4ed8}table{width:100%;border-collapse:collapse;margin-bottom:6px;table-layout:fixed}th{text-align:left;border-bottom:2px solid #333;padding:4px 6px 4px 0;font-size:11px;text-transform:uppercase;overflow:hidden}td{padding:4px 6px 4px 0;border-bottom:1px solid #eee;vertical-align:top;overflow:hidden;word-break:break-word}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}.shop-total{font-size:11px;color:#444;margin-bottom:14px;text-align:right}@media print{button{display:none}}</style></head><body>')
-    w.document.write('<h1>WW Small Engine - Shop Trip Sheet</h1>')
+    w.document.write('<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><img src="' + window.location.origin + '/icons/logo.png" style="width:54px;height:54px" /><h1 style="margin:0">Cavin\'s Small Engine Repair - Shop Trip Sheet</h1></div>')
     w.document.write('<p>Date: ' + tripData.tripDate + '</p>')
     w.document.write('<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">Print</button>')
 
@@ -381,7 +381,11 @@ function ReportsPageInner() {
 
       {/* Print-only header */}
       <div className="hidden print:block mb-4 pb-3 border-b">
-        <div className="text-xl font-bold text-gray-900">WW Small Engine - Reports</div>
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/logo.png" alt="" className="h-12 w-12" />
+          <div className="text-xl font-bold text-gray-900">Cavin&apos;s Small Engine Repair - Reports</div>
+        </div>
         <div className="text-sm text-gray-500 mt-1">
           {tab === 'financial' && 'Financial Reports - ' + fromDate + ' to ' + toDate}
           {tab === 'referral' && 'Referral Shop Reports'}

@@ -21,8 +21,13 @@ export default function Nav() {
   return (
     <nav className="bg-orange-500 text-white sticky top-0 z-40 shadow-sm">
       <div className="px-4 py-3 flex items-center justify-between">
-        <Link href="/" className="font-bold text-lg" onClick={() => setOpen(false)}>
-          WW Small Engine
+        <Link href="/" className="flex items-center gap-2 font-bold text-lg min-w-0" onClick={() => setOpen(false)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/logo.png" alt="" className="h-9 w-9 rounded-full flex-shrink-0" />
+          <span className="truncate">
+            <span className="sm:hidden">Cavin&apos;s</span>
+            <span className="hidden sm:inline">Cavin&apos;s Small Engine Repair</span>
+          </span>
         </Link>
 
         {/* Desktop / tablet links */}
