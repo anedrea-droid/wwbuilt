@@ -70,22 +70,22 @@ export async function PATCH(
     // Auto-status logic - runs after the main update
     if (body.shop_payment_received === true || body.shop_payment_received === 'true') {
       await pool.query(
-        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1",
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status NOT IN ('donated', 'abandoned')",
         [id]
       )
     } else if (body.referral_dropoff_date) {
       await pool.query(
-        "UPDATE work_orders SET status = 'at-shop' WHERE id = $1 AND status NOT IN ('picked-up')",
+        "UPDATE work_orders SET status = 'at-shop' WHERE id = $1 AND status NOT IN ('picked-up', 'donated', 'abandoned')",
         [id]
       )
     } else if (body.date_picked_up) {
       await pool.query(
-        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1",
+        "UPDATE work_orders SET status = 'picked-up' WHERE id = $1 AND status NOT IN ('donated', 'abandoned')",
         [id]
       )
     } else if (body.date_complete) {
       await pool.query(
-        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
+        "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up', 'donated', 'abandoned')",
         [id]
       )
     }
@@ -105,6 +105,11 @@ export async function PATCH(
         && !after.service_denied
         && !['donated', 'abandoned'].includes(String(after.status))) {
       await pool.query(ESTIMATE_FILL_SQL, [id])
+    }
+
+    // 1b) Equipment becomes WW property (abandoned / donated): the job is closed, so stamp a completion date.
+    if (['donated', 'abandoned'].includes(String(after.status)) && !['donated', 'abandoned'].includes(String(before.status)) && !has(after.date_complete)) {
+      await pool.query('UPDATE work_orders SET date_complete = ' + TODAY_CT + ' WHERE id = $1', [id])
     }
 
     // 2) Shop payment marked received: default the amount to the invoice and the date to today.

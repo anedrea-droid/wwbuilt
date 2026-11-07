@@ -536,6 +536,8 @@ export default function WorkOrderDetail() {
   // before this field existed.
   const woSource = wo.source || customer?.source
   const woReferralShop = wo.referralShop || customer?.referralShop
+  // Equipment that became WW property (abandoned / donated): no payment, commission or payout applies.
+  const keptByWW = wo.status === 'donated' || wo.status === 'abandoned'
 
   const field = (label: string, key: keyof WorkOrder, type = 'text') => (
     <div>
@@ -1157,16 +1159,22 @@ export default function WorkOrderDetail() {
                 <div className={'rounded-lg border-2 p-4 ' + (wo.shopPaymentReceived ? 'border-green-300 bg-green-50' : 'border-blue-200 bg-blue-50')}>
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="text-sm font-semibold text-gray-700">Payment</h3>
-                    {wo.shopPaymentReceived
+                    {keptByWW
+                      ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">KEPT BY CAVIN'S</span>
+                      : wo.shopPaymentReceived
                       ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">SHOP PAID</span>
                       : wo.referralDropoffDate
                       ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">AWAITING SHOP PAYMENT</span>
                       : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">NOT RETURNED YET</span>}
                   </div>
+                  {keptByWW ? (
+                    <p className="text-xs text-gray-600">The equipment became Cavin's property, so no payment is expected from {woReferralShop || 'the shop'} and no commission is owed.</p>
+                  ) : (
                   <p className="text-xs text-gray-600">
                     The referral shop pays us for this job. Record it in the Referral Shop Tracking box below
                     {wo.shopPaymentReceived && wo.shopPaymentAmount ? ' - received $' + Number(wo.shopPaymentAmount).toFixed(2) + (wo.shopPaymentDate ? ' on ' + String(wo.shopPaymentDate).slice(0, 10) : '') : ''}.
                   </p>
+                  )}
                   {editing && (
                     <label className="flex items-center gap-2 text-xs text-gray-600 mt-2">
                       <input type="checkbox" checked={form.paymentMethod === 'no charge'}
@@ -1296,6 +1304,14 @@ export default function WorkOrderDetail() {
               ) : <p className="text-sm text-gray-800">{wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0, 10) : '-'}</p>}
             </div>
           </div>
+          {keptByWW && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <p className="text-sm font-semibold text-purple-800">Closed - equipment kept by Cavin's ({wo.status === 'donated' ? 'Donated' : 'Abandoned'})</p>
+              <p className="text-xs text-purple-700 mt-1">No payment or commission is owed to or from {woReferralShop || 'the shop'} on this job.</p>
+            </div>
+          )}
+          {!keptByWW && (
+          <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Payment Received From Shop ($)</label>
@@ -1383,6 +1399,8 @@ export default function WorkOrderDetail() {
             </div>
           )}
 
+          </>
+          )}
           {editing && (
             <div className="flex justify-end gap-2 pt-2 border-t border-blue-200">
               <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
@@ -1395,6 +1413,12 @@ export default function WorkOrderDetail() {
       )}
 
       {/* Payout Summary - Internal Only */}
+      {keptByWW ? (
+        <div className="bg-white rounded-xl shadow p-4 border-2 border-dashed border-gray-200">
+          <h2 className="font-semibold text-gray-700">Payout Summary</h2>
+          <p className="text-sm text-gray-500 mt-1">No payout - the equipment became Cavin's property. If it is resold, the sale is tracked under Shop Equipment and the Financial report's resale section.</p>
+        </div>
+      ) : (
       <div className="bg-white rounded-xl shadow p-4 space-y-3 border-2 border-dashed border-gray-200">
         <div className="flex items-center gap-2">
           <h2 className="font-semibold text-gray-700">Payout Summary</h2>
@@ -1489,6 +1513,7 @@ export default function WorkOrderDetail() {
           )
         })()}
       </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border p-4 mb-4">
         <div className="flex items-center justify-between mb-3">

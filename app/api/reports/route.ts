@@ -316,7 +316,9 @@ export async function GET(req: Request) {
         'SELECT wo.id, wo.order_number, wo.date_in, wo.status, wo.complaint, ' +
         'c.name as customer_name, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
         'e.type as equipment_type, e.make, e.model, e.serial_number, ' +
-        'se.status as shop_status, se.asking_price, se.sale_price, se.sale_date, se.condition_notes ' +
+        'se.status as shop_status, se.asking_price, se.sale_price, se.sale_date, se.condition_notes, se.acquired_date, ' +
+        'wo.labor_hours, wo.labor_rate, ' +
+        '(SELECT COALESCE(SUM(p.cost * p.quantity), 0) FROM parts p WHERE p.work_order_id = wo.id) as parts_cost ' +
         'FROM work_orders wo ' +
         'LEFT JOIN customers c ON c.id = wo.customer_id ' +
         'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
@@ -402,6 +404,41 @@ export async function GET(req: Request) {
         [cutoff]
       )
       return NextResponse.json({ rows, cutoff })
+    }
+
+    if (type === 'resale') {
+      // Equipment WW acquired (abandoned / donated) and what it is selling for. Kept completely separate
+      // from repair income, payouts and referral shop amounts.
+      const { rows } = await pool.query(
+        'SELECT se.id, se.work_order_id, se.equipment_description, se.acquisition_type, se.acquired_date, ' +
+        'se.status, se.asking_price, se.sale_price, se.sale_date, se.condition_notes, ' +
+        'wo.order_number, COALESCE(wo.source, c.source) as customer_source, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
+        '(SELECT COALESCE(SUM(p.cost * p.quantity), 0) FROM parts p WHERE p.work_order_id = wo.id) as parts_cost ' +
+        'FROM shop_equipment se ' +
+        'LEFT JOIN work_orders wo ON wo.id::text = se.work_order_id::text ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'ORDER BY se.sale_date DESC NULLS LAST, se.acquired_date DESC NULLS LAST'
+      )
+      return NextResponse.json(rows)
+    }
+
+    if (type === 'closed-kept') {
+      // Referral shop jobs that ended with the equipment becoming WW property: no payment or commission either way.
+      const { rows } = await pool.query(
+        'SELECT wo.id, wo.order_number, wo.status, wo.date_in, wo.date_complete, wo.referral_pickup_date, wo.referral_dropoff_date, ' +
+        'wo.labor_hours, wo.labor_rate, ' +
+        'c.name as customer_name, COALESCE(wo.referral_shop, c.referral_shop) as referral_shop, ' +
+        'e.type as equipment_type, e.make, e.model, ' +
+        'se.acquired_date, se.status as shop_status, se.sale_price, ' +
+        '(SELECT COALESCE(SUM(p.cost * p.quantity), 0) FROM parts p WHERE p.work_order_id = wo.id) as parts_cost ' +
+        'FROM work_orders wo ' +
+        'LEFT JOIN customers c ON c.id = wo.customer_id ' +
+        'LEFT JOIN equipment e ON e.id = wo.equipment_id ' +
+        'LEFT JOIN shop_equipment se ON se.work_order_id::text = wo.id::text ' +
+        'WHERE wo.status IN (\'donated\', \'abandoned\') AND COALESCE(wo.source, c.source) = \'referral\' ' +
+        'ORDER BY COALESCE(se.acquired_date::text, NULLIF(wo.date_complete::text, \'\'), NULLIF(wo.date_in::text, \'\')) DESC NULLS LAST'
+      )
+      return NextResponse.json(rows)
     }
 
     if (type === 'no-charge') {

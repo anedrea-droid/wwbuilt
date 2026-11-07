@@ -145,6 +145,8 @@ function ReportsPageInner() {
   const [completed, setCompleted] = useState<Record<string, unknown>[]>([])
   const [openOrders, setOpenOrders] = useState<Record<string, unknown>[]>([])
   const [donatedAbandoned, setDonatedAbandoned] = useState<Record<string, unknown>[]>([])
+  const [resaleItems, setResaleItems] = useState<Record<string, unknown>[]>([])
+  const [closedKept, setClosedKept] = useState<Record<string, unknown>[]>([])
   const [pendingParts, setPendingParts] = useState<Record<string, unknown>[]>([])
   const [partsReport, setPartsReport] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(false)
@@ -267,23 +269,27 @@ function ReportsPageInner() {
       })
       .catch(e => { errors.push(String(e)); return [] })
     if (tab === 'financial') {
-      const [p, o, nc, np] = await Promise.all([
+      const [p, o, nc, np, rs] = await Promise.all([
         getJson(base + 'type=payouts&from=' + fromDate + '&to=' + toDate),
         getJson(base + 'type=outstanding'),
         getJson(base + 'type=no-charge'),
         getJson(base + 'type=never-paid'),
+        getJson(base + 'type=resale'),
       ])
       setPayouts(Array.isArray(p) ? p : [])
       setOutstanding(Array.isArray(o) ? o : [])
       setNoCharge(Array.isArray(nc) ? nc : [])
       setUnpaidWork(Array.isArray(np) ? np : [])
+      setResaleItems(Array.isArray(rs) ? rs : [])
     }
     if (tab === 'referral') {
-      const [a, h] = await Promise.all([
+      const [a, h, ck] = await Promise.all([
         getJson(base + 'type=referral-at-shop'),
         getJson(base + 'type=referral-history'),
+        getJson(base + 'type=closed-kept'),
       ])
       setAtShop(Array.isArray(a) ? a : [])
+      setClosedKept(Array.isArray(ck) ? ck : [])
       setRefHistory(Array.isArray(h) ? h : [])
     }
     if (tab === 'workorders') {
@@ -803,6 +809,153 @@ function ReportsPageInner() {
             })()}
           </Section>
 
+          {/* Resale of acquired (abandoned / donated) equipment - separate from repair income */}
+          <Section title={'Resale of Acquired Equipment - ' + fromDate + ' to ' + toDate} subtitle="Abandoned and donated equipment that Cavin's kept and resold. Tracked on its own: it is not part of the Payout Summary, repair revenue or any referral shop amount, and no shop commission applies. Cost is the parts spent on the original repair (labor is not counted).">
+            {(() => {
+              const sold = resaleItems.filter(r => r.status === 'sold' && r.sale_date && fmtDate(r.sale_date) >= fromDate && fmtDate(r.sale_date) <= toDate)
+              const soldNoDate = resaleItems.filter(r => r.status === 'sold' && !r.sale_date)
+              const onHand = resaleItems.filter(r => r.status !== 'sold')
+              const salesTotal = sold.reduce((t, r) => t + (Number(r.sale_price) || 0), 0)
+              const costTotal = sold.reduce((t, r) => t + (Number(r.parts_cost) || 0), 0)
+              const askingTotal = onHand.reduce((t, r) => t + (Number(r.asking_price) || 0), 0)
+              if (resaleItems.length === 0) {
+                return <p className="text-sm text-gray-400 italic py-4 text-center">No acquired equipment yet. Equipment marked Abandoned or Donated on a work order shows up here once it is in Shop Equipment.</p>
+              }
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-gray-500 mb-1">Sold</div>
+                      <div className="font-bold text-gray-800">{sold.length}</div>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-green-600 mb-1">Resale Sales</div>
+                      <div className="font-bold text-green-700">{fmt(salesTotal)}</div>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-red-500 mb-1">Parts Cost</div>
+                      <div className="font-bold text-red-600">{fmt(costTotal)}</div>
+                    </div>
+                    <div className="bg-orange-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-orange-600 mb-1">Resale Profit</div>
+                      <div className="font-bold text-orange-600">{fmt(salesTotal - costTotal)}</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <div className="text-xs text-blue-600 mb-1">On Hand</div>
+                      <div className="font-bold text-blue-700">{onHand.length}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">asking {fmt(askingTotal)}</div>
+                    </div>
+                  </div>
+
+                  {soldNoDate.length > 0 && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                      {soldNoDate.length} item{soldNoDate.length !== 1 ? 's are' : ' is'} marked sold with no sale date, so {soldNoDate.length !== 1 ? 'they do' : 'it does'} not appear in any date range. Add the sale date on the Shop Equipment page.
+                    </p>
+                  )}
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Sold in this date range</h3>
+                    {sold.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">Nothing sold in this date range</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                              <th className="pb-2 pr-3">Sold</th>
+                              <th className="pb-2 pr-3">Equipment</th>
+                              <th className="pb-2 pr-3">Acquired</th>
+                              <th className="pb-2 pr-3">From</th>
+                              <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                              <th className="pb-2 pr-3 text-right">Sale Price</th>
+                              <th className="pb-2 text-right">Profit</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sold.map(r => {
+                              const cost = Number(r.parts_cost) || 0
+                              const price = Number(r.sale_price) || 0
+                              return (
+                                <tr key={String(r.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                  <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{fmtDate(r.sale_date)}</td>
+                                  <td className="py-1.5 pr-3">{String(r.equipment_description || '-')}</td>
+                                  <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
+                                    <span className={'px-1.5 py-0.5 rounded font-medium ' + (r.acquisition_type === 'donated' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800')}>
+                                      {r.acquisition_type === 'donated' ? 'Donated' : 'Abandoned'}
+                                    </span>
+                                  </td>
+                                  <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
+                                    {r.work_order_id
+                                      ? <Link href={'/work-orders/' + r.work_order_id} className="text-blue-600 hover:underline font-mono">{String(r.order_number || 'WO')}</Link>
+                                      : <span className="text-gray-400">Added manually</span>}
+                                    {r.customer_source === 'referral' && <span className="ml-1 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(r.referral_shop || 'Referral')}</span>}
+                                  </td>
+                                  <td className="py-1.5 pr-3 text-right text-red-500">{cost > 0 ? fmt(cost) : '-'}</td>
+                                  <td className="py-1.5 pr-3 text-right text-green-600 font-medium">{fmt(price)}</td>
+                                  <td className="py-1.5 text-right font-medium">{fmt(price - cost)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 font-semibold">
+                              <td colSpan={4} className="pt-2 text-gray-600">{sold.length} item{sold.length !== 1 ? 's' : ''} sold</td>
+                              <td className="pt-2 pr-3 text-right text-red-600">{fmt(costTotal)}</td>
+                              <td className="pt-2 pr-3 text-right text-green-700">{fmt(salesTotal)}</td>
+                              <td className="pt-2 text-right">{fmt(salesTotal - costTotal)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Still on hand (not sold yet)</h3>
+                    {onHand.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">Nothing on hand</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                              <th className="pb-2 pr-3">Equipment</th>
+                              <th className="pb-2 pr-3">Acquired</th>
+                              <th className="pb-2 pr-3">Days Held</th>
+                              <th className="pb-2 pr-3">Status</th>
+                              <th className="pb-2 pr-3">From</th>
+                              <th className="pb-2 text-right">Asking</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {onHand.map(r => {
+                              const held = daysOpen(r.acquired_date)
+                              return (
+                                <tr key={String(r.id)} className="border-b last:border-0 hover:bg-gray-50">
+                                  <td className="py-1.5 pr-3">{String(r.equipment_description || '-')}</td>
+                                  <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{fmtDate(r.acquired_date)}</td>
+                                  <td className="py-1.5 pr-3 text-gray-500 text-xs">{held !== null ? held : '-'}</td>
+                                  <td className="py-1.5 pr-3 text-xs capitalize">{String(r.status || '-')}</td>
+                                  <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
+                                    {r.work_order_id
+                                      ? <Link href={'/work-orders/' + r.work_order_id} className="text-blue-600 hover:underline font-mono">{String(r.order_number || 'WO')}</Link>
+                                      : <span className="text-gray-400">Added manually</span>}
+                                    {r.customer_source === 'referral' && <span className="ml-1 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(r.referral_shop || 'Referral')}</span>}
+                                  </td>
+                                  <td className="py-1.5 text-right">{Number(r.asking_price) > 0 ? fmt(r.asking_price) : '-'}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+          </Section>
+
         </div>
       )}
 
@@ -1256,6 +1409,57 @@ function ReportsPageInner() {
               </div>
             )}
           </Section>
+
+          <Section title="Closed - Equipment Kept by Cavin's" subtitle="Referral jobs where the equipment ended up abandoned or donated. No payment or commission is owed to or from the shop on these. Full history.">
+            {closedKept.length === 0 ? <Empty /> : (
+              <div className="space-y-4">
+                {Object.entries(groupByShop(closedKept)).sort(([a], [b]) => a.localeCompare(b)).map(([shop, rows]) => (
+                  <div key={shop}>
+                    <h3 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">{shop} ({rows.length})</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
+                            <th className="pb-2 pr-3">WO#</th>
+                            <th className="pb-2 pr-3">Customer</th>
+                            <th className="pb-2 pr-3">Equipment</th>
+                            <th className="pb-2 pr-3">How</th>
+                            <th className="pb-2 pr-3">Closed</th>
+                            <th className="pb-2 pr-3 text-right">Labor Hrs</th>
+                            <th className="pb-2 pr-3 text-right">Parts Cost</th>
+                            <th className="pb-2 pr-3">Now</th>
+                            <th className="pb-2 text-right">Owed to / by Shop</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map(row => (
+                            <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
+                              <td className="py-1.5 pr-3">
+                                <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
+                              </td>
+                              <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
+                              <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
+                              <td className="py-1.5 pr-3">
+                                <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.status === 'donated' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800')}>
+                                  {row.status === 'donated' ? 'Donated' : 'Abandoned'}
+                                </span>
+                              </td>
+                              <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{fmtDate(row.acquired_date || row.date_complete || row.date_in)}</td>
+                              <td className="py-1.5 pr-3 text-right text-gray-500">{Number(row.labor_hours) > 0 ? String(row.labor_hours) : '-'}</td>
+                              <td className="py-1.5 pr-3 text-right text-red-500">{Number(row.parts_cost) > 0 ? fmt(row.parts_cost) : '-'}</td>
+                              <td className="py-1.5 pr-3 text-xs capitalize text-gray-500">{row.shop_status ? String(row.shop_status).replace('-', ' ') + (row.shop_status === 'sold' && row.sale_price ? ' ' + fmt(row.sale_price) : '') : '-'}</td>
+                              <td className="py-1.5 text-right text-gray-500">$0.00</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-gray-400">{closedKept.length} job{closedKept.length !== 1 ? 's' : ''} in total. Any resale income is under Financial &gt; Resale of Acquired Equipment, separate from the shop.</p>
+              </div>
+            )}
+          </Section>
         </div>
       )}
 
@@ -1384,6 +1588,8 @@ function ReportsPageInner() {
                       <th className="pb-2 pr-3">Equipment</th>
                       <th className="pb-2 pr-3">Status</th>
                       <th className="pb-2 pr-3">Date In</th>
+                      <th className="pb-2 pr-3 text-right">Labor Hrs</th>
+                      <th className="pb-2 pr-3 text-right">Parts Cost</th>
                       <th className="pb-2 pr-3">Shop Status</th>
                       <th className="pb-2 pr-3 text-right">Asking Price</th>
                       <th className="pb-2 text-right">Sale Price</th>
@@ -1397,7 +1603,10 @@ function ReportsPageInner() {
                             {String(row.order_number)}
                           </Link>
                         </td>
-                        <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
+                        <td className="py-1.5 pr-3">
+                          {String(row.customer_name || '-')}
+                          {row.customer_source === 'referral' && <span className="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>}
+                        </td>
                         <td className="py-1.5 pr-3 text-gray-500 text-xs">
                           {String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}
                           {row.serial_number ? <span className="text-gray-400"> (S/N: {String(row.serial_number)})</span> : null}
@@ -1408,6 +1617,8 @@ function ReportsPageInner() {
                           </span>
                         </td>
                         <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
+                        <td className="py-1.5 pr-3 text-right text-gray-500">{Number(row.labor_hours) > 0 ? String(row.labor_hours) : '-'}</td>
+                        <td className="py-1.5 pr-3 text-right text-red-500">{Number(row.parts_cost) > 0 ? fmt(row.parts_cost) : '-'}</td>
                         <td className="py-1.5 pr-3 text-gray-500 text-xs capitalize">{String(row.shop_status || '-')}</td>
                         <td className="py-1.5 pr-3 text-right">{row.asking_price ? fmt(row.asking_price) : '-'}</td>
                         <td className="py-1.5 text-right text-green-600 font-medium">{row.sale_price ? fmt(row.sale_price) : '-'}</td>
@@ -1416,7 +1627,10 @@ function ReportsPageInner() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 font-semibold">
-                      <td colSpan={8} className="pt-2 text-gray-600">{donatedAbandoned.length} item{donatedAbandoned.length !== 1 ? 's' : ''}</td>
+                      <td colSpan={5} className="pt-2 text-gray-600">{donatedAbandoned.length} item{donatedAbandoned.length !== 1 ? 's' : ''}</td>
+                      <td className="pt-2 pr-3 text-right text-gray-600">{donatedAbandoned.reduce((t, r) => t + (Number(r.labor_hours) || 0), 0)}</td>
+                      <td className="pt-2 pr-3 text-right text-red-600">{fmt(donatedAbandoned.reduce((t, r) => t + (Number(r.parts_cost) || 0), 0))}</td>
+                      <td colSpan={3}></td>
                     </tr>
                   </tfoot>
                 </table>

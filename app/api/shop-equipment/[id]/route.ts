@@ -28,6 +28,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     'UPDATE shop_equipment SET ' + fields.join(', ') + ' WHERE id = $' + idx,
     values
   )
+  // Marked sold without a date: use today (Central time) so it lands in the right report period.
+  await (await getPool()).query(
+    "UPDATE shop_equipment SET sale_date = (NOW() AT TIME ZONE 'America/Chicago')::date WHERE id = $1 AND status = 'sold' AND sale_date IS NULL",
+    [id]
+  )
   const result = await (await getPool()).query('SELECT * FROM shop_equipment WHERE id = $1', [id])
   return NextResponse.json(result.rows[0])
 }
