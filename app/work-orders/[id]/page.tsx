@@ -1,1927 +1,1634 @@
 'use client'
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useSearchParams, useRouter } from 'next/navigation'
 
-const PRINT_STYLES = '@media print { nav { display: none !important; } .print\\:hidden { display: none !important; } body { background: white !important; } }'
-
-type ReportTab = 'financial' | 'referral' | 'workorders' | 'parts' | 'admin'
-
-function fmt(n: unknown) {
-  return '$' + Number(n || 0).toFixed(2)
+interface WorkOrder {
+  id: string; orderNumber: string; customerId: string; equipmentId: string
+  source?: string; referralShop?: string; serviceDenied?: boolean
+  neverPaid?: boolean; neverPaidDate?: string; neverPaidNote?: string
+  status: string; technician: string; complaint: string; diagnosis: string
+  workDone: string; laborHours: number; laborRate: number; dateIn: string
+  referralPickupDate?: string; referralDropoffDate?: string
+  shopPaymentAmount?: number; shopPaymentDate?: string; shopPaymentReceived?: boolean
+  commissionPaid?: boolean; commissionPaidDate?: string
+  dateComplete: string; datePickedUp: string; notes: string
+  paymentMethod: string; amountCharged: number; amountPaid: number; paymentDate?: string
 }
-function fmtDate(d: unknown) {
-  if (!d) return '-'
-  return String(d).slice(0, 10)
-}
-
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3">
-      <div>
-        <h2 className="font-semibold text-gray-800 text-base">{title}</h2>
-        {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
-      </div>
-      {children}
-    </div>
-  )
+interface Customer { id: string; name: string; phone: string; source: string; referralShop: string }
+interface Equipment { id: string; type: string; make: string; model: string; year: string; serialNumber: string }
+interface SavedPart { id: string; name: string; partNumber: string; supplier: string; cost: number; price: number; quantityOnHand: number }
+interface Part {
+  id: string; name: string; partNumber: string; supplier: string
+  quantity: number; cost: number; price: number
+  status: string; dateOrdered: string; dateReceived: string; notes: string
 }
 
-function Empty() {
-  return <p className="text-sm text-gray-400 italic py-4 text-center">No records found</p>
-}
-
-const STATUS_BADGE: Record<string, string> = {
+const STATUS_COLORS: Record<string, string> = {
   'pending':       'bg-yellow-100 text-yellow-800',
   'in-progress':   'bg-blue-100 text-blue-800',
   'waiting-parts': 'bg-orange-100 text-orange-800',
+  'complete':      'bg-green-100 text-green-800',
   'at-shop':       'bg-purple-100 text-purple-700',
-}
-function statusLabel(s: unknown) {
-  return String(s || '-').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-}
-function daysOpen(dateIn: unknown) {
-  if (!dateIn) return null
-  const start = new Date(String(dateIn).slice(0, 10) + 'T00:00:00')
-  const now = new Date()
-  const diff = Math.floor((now.getTime() - start.getTime()) / 86400000)
-  return diff >= 0 ? diff : null
+  'picked-up':     'bg-gray-100 text-gray-800',
+  'abandoned':     'bg-red-100 text-red-800',
+  'donated':       'bg-purple-100 text-purple-800',
 }
 
-const UNPAID_REASONS: { id: string; label: string; cls: string }[] = [
-  { id: 'never-paid', label: 'Picked Up - No Payment', cls: 'bg-red-100 text-red-700' },
-  { id: 'abandoned',  label: 'Abandoned',             cls: 'bg-amber-100 text-amber-800' },
-  { id: 'donated',    label: 'Donated',               cls: 'bg-purple-100 text-purple-700' },
-  { id: 'no-charge',  label: 'No Charge',             cls: 'bg-gray-100 text-gray-600' },
-]
-function unpaidValue(r: Record<string, unknown>) {
-  const charged = Number(r.amount_charged) || 0
-  const shopAmt = Number(r.shop_payment_amount) || 0
-  if (charged > 0) return { value: charged, est: false }
-  if (shopAmt > 0) return { value: shopAmt, est: false }
-  const est = (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 80) + (Number(r.parts_charged) || 0)
-  return { value: est, est: true }
-}
-
-const ABANDON_AFTER_DAYS = 60
-
-async function markAbandonedFromReport(row: Record<string, unknown>) {
-  const patch = await fetch('/api/work-orders/' + row.id, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'abandoned' }),
-  })
-  if (!patch.ok) return false
-  const desc = [row.make, row.model, row.equipment_type].filter(Boolean).map(String).join(' ')
-  const se = await fetch('/api/shop-equipment', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      work_order_id: row.id,
-      equipment_description: desc || 'Unknown Equipment',
-      acquisition_type: 'abandoned',
-      acquired_date: new Date().toISOString().slice(0, 10),
-      condition_notes: 'Marked abandoned from the Thursday check report',
-      status: 'available',
-    }),
-  })
-  return se.ok
-}
-
-async function markNoPaymentRecorded(id: string, note: string) {
-  const res = await fetch('/api/work-orders/' + id, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ never_paid: true, never_paid_date: new Date().toISOString().slice(0, 10), never_paid_note: note }),
-  })
-  return res.ok
-}
-
-function ReportsPageInner() {
-  const searchParams = useSearchParams()
+export default function WorkOrderDetail() {
+  const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const [wo, setWo] = useState<WorkOrder | null>(null)
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [equipment, setEquipment] = useState<Equipment | null>(null)
+  const [parts, setParts] = useState<Part[]>([])
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<Partial<WorkOrder>>({})
+  const [showAddPart, setShowAddPart] = useState(false)
+  const [showCatalog, setShowCatalog] = useState(false)
+  const [catalog, setCatalog] = useState<SavedPart[]>([])
+  const [catalogSearch, setCatalogSearch] = useState('')
+  const [newPart, setNewPart] = useState({
+    name: '', partNumber: '', supplier: '', quantity: 1,
+    cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false,
+  })
+  const [selectedSavedPartId, setSelectedSavedPartId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [showWWModal, setShowWWModal] = useState(false)
+  const [wwAcqType, setWwAcqType] = useState('abandoned')
+  const [wwNotes, setWwNotes] = useState('')
+  const [showNeverPaid, setShowNeverPaid] = useState(false)
+  const [npNote, setNpNote] = useState('')
+  const [npDate, setNpDate] = useState(new Date().toISOString().slice(0, 10))
+  const [showPay, setShowPay] = useState<null | 'customer' | 'shop'>(null)
+  const [payMethod, setPayMethod] = useState('')
+  const [payAmount, setPayAmount] = useState('')
+  const [payDate, setPayDate] = useState('')
+  const [shopEquipment, setShopEquipment] = useState<{
+    id: string; acquisition_type: string; acquired_date: string | null
+    condition_notes: string | null; status: string
+    asking_price: number | null; sale_price: number | null; sale_date: string | null
+  } | null>(null)
+  const [editingPart, setEditingPart] = useState<string | null>(null)
+  const [partForm, setPartForm] = useState<Partial<Part>>({})
+  const [photos, setPhotos] = useState<{id:string;url:string;public_id:string}[]>([])
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const [contactLog, setContactLog] = useState<{id:string;type:string;createdAt:string}[]>([])
 
-  const today = new Date().toISOString().slice(0, 10)
-  const firstOfMonth = today.slice(0, 8) + '01'
+  function logContact(type: 'call' | 'text') {
+    fetch('/api/contact-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workOrderId: id, customerId: customer?.id, type }),
+    }).then(() => {
+      fetch('/api/contact-log?workOrderId=' + id).then(r => r.json()).then(d => setContactLog(Array.isArray(d) ? d : []))
+    }).catch(() => {})
+  }
+  const [isMobile, setIsMobile] = useState(false)
+  const [referralShops, setReferralShops] = useState<{id:string;name:string}[]>([])
 
-  const validTabs: ReportTab[] = ['financial', 'referral', 'workorders', 'parts', 'admin']
-  const initialTab = (searchParams.get('tab') as ReportTab) || 'financial'
-  const [tab, setTab] = useState<ReportTab>(validTabs.includes(initialTab) ? initialTab : 'financial')
-
-  const [fromDate, setFromDate] = useState(searchParams.get('from') || firstOfMonth)
-  const [toDate, setToDate] = useState(searchParams.get('to') || today)
-
-  // Keep the URL in sync with the current tab/date range so browser back/forward
-  // (and links here from work orders) return to the exact report you were viewing,
-  // instead of resetting to the default tab and date range.
   useEffect(() => {
-    const params = new URLSearchParams()
-    params.set('tab', tab)
-    params.set('from', fromDate)
-    params.set('to', toDate)
-    router.replace('/reports?' + params.toString(), { scroll: false })
-  }, [tab, fromDate, toDate, router])
-
-  const [payouts, setPayouts] = useState<Record<string, unknown>[]>([])
-  const [outstanding, setOutstanding] = useState<Record<string, unknown>[]>([])
-  const [noCharge, setNoCharge] = useState<Record<string, unknown>[]>([])
-  const [unpaidWork, setUnpaidWork] = useState<Record<string, unknown>[]>([])
-  const [unpaidFilter, setUnpaidFilter] = useState<string>('all')
-  const [needsReminder, setNeedsReminder] = useState<Record<string, unknown>[]>([])
-  const [loadError, setLoadError] = useState('')
-  const [invoiceFill, setInvoiceFill] = useState<{ rows: Record<string, unknown>[]; backupCount: number }>({ rows: [], backupCount: 0 })
-  const [thursdayCheck, setThursdayCheck] = useState<{ rows: Record<string, unknown>[]; cutoff: string }>({ rows: [], cutoff: '' })
-  const [deniedService, setDeniedService] = useState<Record<string, unknown>[]>([])
-  const [revenue, setRevenue] = useState<Record<string, unknown>[]>([])
-  const [atShop, setAtShop] = useState<Record<string, unknown>[]>([])
-  const [refHistory, setRefHistory] = useState<Record<string, unknown>[]>([])
-  const [tripDate, setTripDate] = useState(new Date().toISOString().slice(0, 10))
-  const [tripData, setTripData] = useState<{ thisTrip: Record<string, unknown>[]; outstanding: Record<string, unknown>[]; tripDate: string } | null>(null)
-  const [tripLoading, setTripLoading] = useState(false)
-  const [settleDate, setSettleDate] = useState(new Date().toISOString().slice(0, 10))
-  const [settleData, setSettleData] = useState<Record<string, unknown>[]>([])
-  const [settleLoading, setSettleLoading] = useState(false)
-  const [hasRunSettlement, setHasRunSettlement] = useState(false)
-  const [completed, setCompleted] = useState<Record<string, unknown>[]>([])
-  const [openOrders, setOpenOrders] = useState<Record<string, unknown>[]>([])
-  const [donatedAbandoned, setDonatedAbandoned] = useState<Record<string, unknown>[]>([])
-  const [pendingParts, setPendingParts] = useState<Record<string, unknown>[]>([])
-  const [partsReport, setPartsReport] = useState<Record<string, unknown>[]>([])
-  const [loading, setLoading] = useState(false)
-
-  function groupByShop(rows: Record<string, unknown>[]): Record<string, Record<string, unknown>[]> {
-    const groups: Record<string, Record<string, unknown>[]> = {}
-    rows.forEach(r => {
-      const shop = String(r.referral_shop || 'Other Shop')
-      if (!groups[shop]) groups[shop] = []
-      groups[shop].push(r)
+    fetch('/api/settings/referral-shops').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setReferralShops(data)
     })
-    return groups
+  }, [])
+
+  useEffect(() => {
+    setIsMobile(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))
+  }, [])
+
+  function normalizeDates(data: WorkOrder): WorkOrder {
+    const d = (v: unknown) => v ? String(v).slice(0, 10) : ''
+    const dateIn = d(data.dateIn)
+    return { ...data, dateIn: dateIn, dateComplete: d(data.dateComplete),
+      datePickedUp: d(data.datePickedUp), referralPickupDate: d(data.referralPickupDate) || dateIn,
+      referralDropoffDate: d(data.referralDropoffDate), shopPaymentDate: d(data.shopPaymentDate),
+      commissionPaidDate: d(data.commissionPaidDate), neverPaidDate: d(data.neverPaidDate), paymentDate: d(data.paymentDate) }
   }
 
-  function printTrip() {
-    if (!tripData) return
-    const fmtD = (d: unknown) => d ? String(d).slice(0, 10) : '-'
-    const fmtM = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
-    const calcInv = (r: Record<string,unknown>) => { const sa = Number(r.shop_payment_amount)||0; return sa > 0 ? sa : (Number(r.amount_charged)||0) }
-    const calcOwes = (r: Record<string,unknown>) => { return (Number(r.labor_hours)||0) * (Number(r.labor_rate)||0) * 0.20 }
+  function loadShopEquipment() {
+    fetch('/api/shop-equipment?workOrderId=' + id).then(r => r.json()).then(d => {
+      setShopEquipment(Array.isArray(d) && d.length > 0 ? d[0] : null)
+    })
+  }
 
-    const thisTripByShop = groupByShop(tripData.thisTrip)
-    const outstandingByShop = groupByShop(tripData.outstanding)
-    const allShops = Array.from(new Set([...Object.keys(thisTripByShop), ...Object.keys(outstandingByShop)])).sort()
+  useEffect(() => {
+    fetch('/api/work-orders/' + id + '/photos').then(r => r.json()).then(d => setPhotos(Array.isArray(d) ? d : []))
+    fetch('/api/contact-log?workOrderId=' + id).then(r => r.json()).then(d => setContactLog(Array.isArray(d) ? d : []))
+    loadShopEquipment()
+    fetch('/api/work-orders/' + id)
+      .then(r => r.json()).then(data => { const n = normalizeDates(data); setWo(n); setForm(n) })
+    fetch('/api/parts?workOrderId=' + id)
+      .then(r => r.json()).then(setParts)
+    fetch('/api/saved-parts')
+      .then(r => r.json()).then(setCatalog)
+  }, [id])
 
-    const tot1 = tripData.thisTrip.reduce((s, r) => s + calcOwes(r), 0)
-    const tot2 = tripData.outstanding.reduce((s, r) => s + calcOwes(r), 0)
+  useEffect(() => {
+    if (!wo) return
+    fetch('/api/customers/' + wo.customerId).then(r => r.json()).then(data => setCustomer(data.customer ?? data))
+    fetch('/api/equipment/' + wo.equipmentId).then(r => r.json()).then(setEquipment)
+  }, [wo])
 
-    const w = window.open('', '_blank')
+  async function markAsWWProperty() {
+    if (!wo) return
+    const equipDesc = [equipment?.year, equipment?.make, equipment?.model, equipment?.type].filter(Boolean).join(' ')
+    await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: wwAcqType })
+    })
+    await fetch('/api/shop-equipment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        work_order_id: id,
+        equipment_description: equipDesc || 'Unknown Equipment',
+        acquisition_type: wwAcqType,
+        acquired_date: new Date().toISOString().slice(0, 10),
+        condition_notes: wwNotes || null,
+        status: 'available'
+      })
+    })
+    setShowWWModal(false)
+    setWwNotes('')
+    loadShopEquipment()
+    const woRes = await fetch('/api/work-orders/' + id)
+    const woData = normalizeDates(await woRes.json())
+    setWo(woData)
+    setForm(woData)
+  }
+
+  async function markNeverPaid() {
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ never_paid: true, never_paid_date: npDate || null, never_paid_note: npNote.trim() || null })
+    })
+    const updated = normalizeDates(await res.json())
+    setWo(updated); setForm(updated)
+    setShowNeverPaid(false); setNpNote('')
+  }
+
+  async function undoNeverPaid() {
+    if (!confirm('Remove the No Payment Recorded mark from this work order? It will go back to showing as owed if it is still unpaid.')) return
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ never_paid: false })
+    })
+    const updated = normalizeDates(await res.json())
+    setWo(updated); setForm(updated)
+  }
+
+  // Estimate = labor (hours x rate) + parts charged to the customer.
+  function currentEstimate(): number {
+    if (!wo) return 0
+    const labor = (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+    const partsSum = parts.reduce((sum, p) => sum + Number(p.price) * Number(p.quantity), 0)
+    return Math.round((labor + partsSum) * 100) / 100
+  }
+
+  // The invoice total in effect: the saved amount, or the estimate if none has been saved yet.
+  function invoiceNow(): number {
+    const saved = Number(wo?.amountCharged) || 0
+    return saved > 0 ? saved : currentEstimate()
+  }
+
+  async function refreshWo(res: Response) {
+    if (!res.ok) { alert('That did not save. Please try again.'); return false }
+    const updated = normalizeDates(await res.json())
+    setWo(updated); setForm(updated)
+    return true
+  }
+
+  async function setInvoiceToEstimate() {
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount_charged: currentEstimate() }),
+    })
+    await refreshWo(res)
+  }
+
+  function openPayment(mode: 'customer' | 'shop') {
+    const paidSoFar = mode === 'customer' ? Number(wo?.amountPaid) || 0 : 0
+    const m = String(wo?.paymentMethod || '').toLowerCase()
+    setPayMethod(['cash', 'check', 'card', 'other'].includes(m) ? m : '')
+    setPayAmount(Math.max(invoiceNow() - paidSoFar, 0).toFixed(2))
+    setPayDate(new Date().toLocaleDateString('en-CA'))
+    setShowPay(mode)
+  }
+
+  async function recordPayment() {
+    const amt = Number(payAmount)
+    if (!(amt > 0)) { alert('Enter the amount received.'); return }
+    const body: Record<string, unknown> = {}
+    if (showPay === 'customer') {
+      if (!payMethod) { alert('Choose how the customer paid.'); return }
+      body.payment_method = payMethod
+      body.amount_paid = Math.round(((Number(wo?.amountPaid) || 0) + amt) * 100) / 100
+      body.payment_date = payDate || null
+    } else {
+      body.shop_payment_received = true
+      body.shop_payment_amount = amt
+      body.shop_payment_date = payDate || null
+    }
+    if (!(Number(wo?.amountCharged) > 0) && invoiceNow() > 0) body.amount_charged = invoiceNow()
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (await refreshWo(res)) setShowPay(null)
+  }
+
+  async function saveWorkOrder() {
+    setSaving(true)
+    const payload = {
+      status: form.status,
+      source: form.source,
+      referral_shop: form.referralShop,
+      service_denied: form.serviceDenied,
+      technician: form.technician,
+      complaint: form.complaint,
+      diagnosis: form.diagnosis,
+      work_done: form.workDone,
+      labor_hours: form.laborHours,
+      labor_rate: form.laborRate,
+      date_in: form.dateIn,
+      date_complete: form.dateComplete,
+      date_picked_up: form.datePickedUp,
+      notes: form.notes,
+      payment_method: form.paymentMethod,
+      payment_date: form.paymentDate,
+      amount_charged: form.amountCharged,
+      amount_paid: form.amountPaid,
+      referral_pickup_date: form.referralPickupDate,
+      referral_dropoff_date: form.referralDropoffDate,
+      shop_payment_amount: form.shopPaymentAmount,
+      shop_payment_date: form.shopPaymentDate,
+      shop_payment_received: form.shopPaymentReceived,
+      commission_paid: form.commissionPaid,
+      commission_paid_date: form.commissionPaidDate,
+    }
+    const res = await fetch('/api/work-orders/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const updated = normalizeDates(await res.json())
+    setWo(updated); setForm(updated); setEditing(false); setSaving(false)
+  }
+
+  async function addPart() {
+    const today = new Date().toISOString().split('T')[0]
+    const partPayload = newPart.fromShop
+      ? { ...newPart, workOrderId: id, status: 'received', date_received: today }
+      : { ...newPart, workOrderId: id }
+    const res = await fetch('/api/parts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(partPayload),
+    })
+    const part = await res.json()
+    setParts(p => [...p, part])
+
+    // If this part was pulled from shop stock, take it out of inventory.
+    if (newPart.fromShop && selectedSavedPartId) {
+      await fetch('/api/saved-parts/' + selectedSavedPartId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adjustQuantityBy: -(Number(newPart.quantity) || 1) }),
+      })
+      fetch('/api/saved-parts').then(r => r.json()).then(d => setCatalog(Array.isArray(d) ? d : []))
+    }
+
+    setNewPart({ name: '', partNumber: '', supplier: '', quantity: 1, cost: '', price: '', dateOrdered: new Date().toISOString().split('T')[0], fromShop: false })
+    setSelectedSavedPartId(null)
+    setShowAddPart(false)
+    setShowCatalog(false)
+    const woRes = await fetch('/api/work-orders/' + id)
+    const woData = normalizeDates(await woRes.json())
+    setWo(woData); setForm(woData)
+  }
+
+  function printReceipt() {
+    if (!wo || !customer || !equipment) return
+    const totalCharge = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged)
+      : (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+        + parts.reduce((s, p) => s + Number(p.price) * Number(p.quantity), 0)
+    const html = '<!DOCTYPE html><html><head><title>WW Small Engine - Shop Receipt</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;padding:20px;color:#222;}'
+      + 'h1{font-size:22px;margin:0;}'
+      + '.sub{color:#666;font-size:13px;margin-top:4px;}'
+      + '.header{border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:20px;}'
+      + '.section{margin-bottom:16px;}'
+      + '.label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px;}'
+      + '.value{font-size:14px;margin-top:2px;}'
+      + '.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}'
+      + '.total{background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:14px;margin:20px 0;}'
+      + '.total-label{font-size:13px;color:#444;}'
+      + '.total-amount{font-size:26px;font-weight:bold;margin-top:4px;}'
+      + '.sig{border-top:1px solid #222;margin-top:60px;padding-top:8px;font-size:12px;color:#666;}'
+      + '.sig-row{display:grid;grid-template-columns:2fr 1fr;gap:40px;margin-top:40px;}'
+      + '.sig-line{border-top:1px solid #222;padding-top:6px;font-size:12px;color:#666;}'
+      + '@media print{body{margin:20px;}}'
+      + '</style></head><body>'
+      + '<div class="header">'
+      + '<h1>WW Small Engine</h1>'
+      + '<div class="sub">Shop Return Receipt</div>'
+      + '</div>'
+      + '<div class="grid">'
+      + '<div class="section"><div class="label">Work Order</div><div class="value">' + (wo.orderNumber || '') + '</div></div>'
+      + '<div class="section"><div class="label">Date Returned to Shop</div><div class="value">' + (wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0,10) : '-') + '</div></div>'
+      + '<div class="section"><div class="label">Customer</div><div class="value">' + (customer.name || '') + '</div></div>'
+      + '<div class="section"><div class="label">Referring Shop</div><div class="value">' + (wo.referralShop || customer.referralShop || '') + '</div></div>'
+      + '</div>'
+      + '<div class="section"><div class="label">Equipment</div><div class="value">' + [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ') + (equipment.serialNumber ? ' | S/N: ' + equipment.serialNumber : '') + '</div></div>'
+      + '<div class="section"><div class="label">Problem Reported</div><div class="value">' + (wo.complaint || '-') + '</div></div>'
+      + '<div class="section"><div class="label">Work Performed</div><div class="value">' + (wo.workDone || '-') + '</div></div>'
+      + '<div class="total">'
+      + '<div class="total-label">Total Amount to Collect from Customer</div>'
+      + '<div class="total-amount">$' + totalCharge.toFixed(2) + '</div>'
+      + (Number(wo.amountCharged) === 0 ? '<div style="font-size:11px;color:#888;margin-top:4px;">* Estimated - final amount may vary</div>' : '')
+      + '</div>'
+      + '<div class="sig">Please collect payment from customer before releasing equipment.</div>'
+      + '<div class="sig-row">'
+      + '<div class="sig-line">Shop Representative Signature</div>'
+      + '<div class="sig-line">Date</div>'
+      + '</div>'
+      + '</body></html>'
+    const w = window.open('', '_blank', 'width=800,height=700')
     if (!w) return
-    w.document.write('<html><head><title>Trip Sheet - ' + tripData.tripDate + '</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}h3{font-size:13px;margin:12px 0 4px;color:#1d4ed8}table{width:100%;border-collapse:collapse;margin-bottom:6px;table-layout:fixed}th{text-align:left;border-bottom:2px solid #333;padding:4px 6px 4px 0;font-size:11px;text-transform:uppercase;overflow:hidden}td{padding:4px 6px 4px 0;border-bottom:1px solid #eee;vertical-align:top;overflow:hidden;word-break:break-word}tfoot td{border-top:2px solid #333;font-weight:bold;padding-top:6px}.right{text-align:right}.orange{color:#c2410c}.shop-total{font-size:11px;color:#444;margin-bottom:14px;text-align:right}@media print{button{display:none}}</style></head><body>')
-    w.document.write('<h1>WW Small Engine - Shop Trip Sheet</h1>')
-    w.document.write('<p>Date: ' + tripData.tripDate + '</p>')
-    w.document.write('<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">Print</button>')
-
-    w.document.write('<h2>Dropping Off Today (' + tripData.thisTrip.length + ' items)</h2>')
-    if (tripData.thisTrip.length === 0) {
-      w.document.write('<p style="color:#888;font-style:italic;">No drop-offs recorded for this date.</p>')
-    } else {
-      allShops.forEach(shop => {
-        const rows = thisTripByShop[shop]
-        if (!rows || rows.length === 0) return
-        const shopInv = rows.reduce((s, r) => s + calcInv(r), 0)
-        const shopOwes = rows.reduce((s, r) => s + calcOwes(r), 0)
-        const rowsHtml = rows.map(r => {
-          const inv = Number(r.amount_charged) || 0
-          const owes = calcOwes(r)
-          return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
-        }).join('')
-        w.document.write('<h3>' + shop + '</h3>')
-        w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Work Done / Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>')
-        w.document.write('<div class="shop-total">' + shop + ' subtotal - Invoice: $' + shopInv.toFixed(2) + ' &nbsp;|&nbsp; WW Owes: $' + shopOwes.toFixed(2) + '</div>')
-      })
-    }
-
-    w.document.write('<h2>Previously Returned - Awaiting Shop Payment (' + tripData.outstanding.length + ' items)</h2>')
-    if (tripData.outstanding.length === 0) {
-      w.document.write('<p style="color:#888;font-style:italic;">Nothing outstanding.</p>')
-    } else {
-      allShops.forEach(shop => {
-        const rows = outstandingByShop[shop]
-        if (!rows || rows.length === 0) return
-        const shopInv = rows.reduce((s, r) => s + calcInv(r), 0)
-        const shopOwes = rows.reduce((s, r) => s + calcOwes(r), 0)
-        const rowsHtml = rows.map(r => {
-          const inv = Number(r.amount_charged) || 0
-          const owes = calcOwes(r)
-          return '<tr><td>' + String(r.order_number) + '</td><td>' + String(r.customer_name || '') + '</td><td>' + String(r.equipment_type || '') + ' ' + String(r.make || '') + ' ' + String(r.model || '') + '</td><td>' + fmtD(r.referral_dropoff_date) + '</td><td>' + String(r.complaint || r.work_done || '') + '</td><td class="right">' + (inv > 0 ? fmtM(inv) : '-') + '</td><td class="right orange">' + (owes > 0 ? fmtM(owes) : '-') + '</td></tr>'
-        }).join('')
-        w.document.write('<h3>' + shop + '</h3>')
-        w.document.write('<table><thead><tr><th>WO#</th><th>Customer</th><th>Equipment</th><th>Returned</th><th>Notes</th><th class="right">Invoice</th><th class="right orange">WW Owes Shop</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>')
-        w.document.write('<div class="shop-total">' + shop + ' subtotal - Invoice: $' + shopInv.toFixed(2) + ' &nbsp;|&nbsp; WW Owes: $' + shopOwes.toFixed(2) + '</div>')
-      })
-    }
-
-    w.document.write('<p style="margin-top:20px;font-size:13px;font-weight:bold;color:#333">Combined WW Owes (All Shops): $' + (tot1 + tot2).toFixed(2) + '</p>')
-    w.document.write('</body></html>')
+    w.document.write(html)
     w.document.close()
+    w.focus()
+    w.print()
   }
 
-    async function loadSettlement(date: string) {
-    setSettleLoading(true)
-    setHasRunSettlement(true)
-    try {
-      const res = await fetch('/api/reports?type=shop-settlement&date=' + date)
-      const data = await res.json()
-      setSettleData(Array.isArray(data.rows) ? data.rows : [])
-    } catch {
-      setSettleData([])
-    }
-    setSettleLoading(false)
+  function printWorkOrder() {
+    if (!wo) return
+    const equipDesc = equipment
+      ? [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ') + (equipment.serialNumber ? ' | S/N: ' + equipment.serialNumber : '')
+      : '-'
+    const noteLines = Array.from({ length: 16 }).map(() => '<div class="ruled-line"></div>').join('')
+    const html = '<!DOCTYPE html><html><head><title>Work Order ' + (wo.orderNumber || '') + '</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;max-width:800px;margin:30px auto;padding:20px;color:#222;}'
+      + '.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #222;padding-bottom:14px;margin-bottom:20px;}'
+      + '.shop-name{font-size:20px;font-weight:bold;}'
+      + '.sub{color:#666;font-size:12px;margin-top:2px;}'
+      + '.wo-number{font-size:34px;font-weight:bold;border:2px solid #222;padding:8px 18px;border-radius:8px;text-align:center;}'
+      + '.wo-customer{font-size:16px;font-weight:bold;text-align:center;margin-top:6px;}'
+      + '.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}'
+      + '.section{margin-bottom:14px;}'
+      + '.label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px;}'
+      + '.value{font-size:15px;margin-top:2px;}'
+      + '.notes-title{font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin:24px 0 6px;border-bottom:1px solid #222;padding-bottom:4px;}'
+      + '.ruled-line{border-bottom:1px solid #999;height:30px;}'
+      + '.bottom-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:24px;}'
+      + '.bottom-field{border-top:1px solid #222;padding-top:6px;font-size:12px;color:#666;}'
+      + '@media print{body{margin:15px;} .no-print{display:none;}}'
+      + '</style></head><body>'
+      + '<div class="no-print" style="text-align:right;margin-bottom:10px;">'
+      + '<button onclick="window.print()" style="background:#f97316;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;">Print</button>'
+      + '</div>'
+      + '<div class="header">'
+      + '<div><div class="shop-name">WW Small Engine</div><div class="sub">Shop Work Order</div></div>'
+      + '<div><div class="wo-number">' + (wo.orderNumber || '') + '</div>'
+      + '<div class="wo-customer">' + (customer?.name || '') + '</div></div>'
+      + '</div>'
+      + '<div class="grid">'
+      + '<div class="section"><div class="label">Customer</div><div class="value">' + (customer?.name || '') + '</div></div>'
+      + '<div class="section"><div class="label">Phone</div><div class="value">' + (customer?.phone || '-') + '</div></div>'
+      + '<div class="section"><div class="label">Equipment</div><div class="value">' + equipDesc + '</div></div>'
+      + '<div class="section"><div class="label">Date In</div><div class="value">' + (wo.dateIn ? String(wo.dateIn).slice(0,10) : '-') + '</div></div>'
+      + '<div class="section"><div class="label">Technician</div><div class="value">' + (wo.technician || '-') + '</div></div>'
+      + '<div class="section"><div class="label">Source</div><div class="value">' + ((wo.source || customer?.source) === 'referral' ? 'Referral - ' + (wo.referralShop || customer?.referralShop || '') : 'Direct Customer') + '</div></div>'
+      + '</div>'
+      + '<div class="section"><div class="label">Problem Reported</div><div class="value">' + (wo.complaint || '-') + '</div></div>'
+      + '<div class="notes-title">Technician Notes / Work Performed</div>'
+      + noteLines
+      + '<div class="bottom-fields">'
+      + '<div class="bottom-field">Labor Hours</div>'
+      + '<div class="bottom-field">Date Complete</div>'
+      + '<div class="bottom-field">Parts Used</div>'
+      + '</div>'
+      + '</body></html>'
+    const w = window.open('', '_blank', 'width=850,height=900')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
   }
 
-    async function loadTrip(date: string) {
-    setTripLoading(true)
-    try {
-      const res = await fetch('/api/reports?type=referral-trip&date=' + date)
-      const data = await res.json()
-      setTripData({
-        thisTrip: Array.isArray(data.thisTrip) ? data.thisTrip : [],
-        outstanding: Array.isArray(data.outstanding) ? data.outstanding : [],
-        tripDate: data.tripDate || date,
-      })
-    } catch {
-      setTripData({ thisTrip: [], outstanding: [], tripDate: date })
+  function sendPickupReminder() {
+    if (!wo || !customer?.phone) return
+    const equipDesc = equipment
+      ? [equipment.type, equipment.make, equipment.model].filter(Boolean).join(' ')
+      : 'your equipment'
+    const firstName = (customer.name || '').split(' ')[0] || 'there'
+    const isRef = (wo.source || customer.source) === 'referral'
+
+    let message: string
+    if (isRef) {
+      const shopName = wo.referralShop || customer.referralShop || 'the shop'
+      message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
+        + equipDesc + ' is completed and back at ' + shopName + ', ready for pickup. Thanks!'
+    } else {
+      const partsTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
+      const laborTotal = (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+      const amount = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : laborTotal + partsTotal
+      message = 'Hi ' + firstName + ', just a friendly reminder from WW Small Engine - your '
+        + equipDesc + ' is ready for pickup! Total due: $' + amount.toFixed(2) + '. Thanks!'
     }
-    setTripLoading(false)
+
+    const digits = customer.phone.replace(/[^0-9+]/g, '')
+    const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?'
+    logContact('text')
+    window.location.href = 'sms:' + digits + separator + 'body=' + encodeURIComponent(message)
   }
 
-    const load = useCallback(async () => {
-    setLoading(true)
-    const base = '/api/reports?'
-    // Collect any error a report sends back so it shows on screen instead of looking like "no records".
-    const errors: string[] = []
-    const getJson = (url: string) => fetch(url)
-      .then(x => x.json())
-      .then(d => {
-        if (d && typeof d === 'object' && !Array.isArray(d) && d.error) errors.push(String(d.error))
-        return d
-      })
-      .catch(e => { errors.push(String(e)); return [] })
-    if (tab === 'financial') {
-      const [p, o, nc, np] = await Promise.all([
-        getJson(base + 'type=payouts&from=' + fromDate + '&to=' + toDate),
-        getJson(base + 'type=outstanding'),
-        getJson(base + 'type=no-charge'),
-        getJson(base + 'type=never-paid'),
-      ])
-      setPayouts(Array.isArray(p) ? p : [])
-      setOutstanding(Array.isArray(o) ? o : [])
-      setNoCharge(Array.isArray(nc) ? nc : [])
-      setUnpaidWork(Array.isArray(np) ? np : [])
-    }
-    if (tab === 'referral') {
-      const [a, h] = await Promise.all([
-        getJson(base + 'type=referral-at-shop'),
-        getJson(base + 'type=referral-history'),
-      ])
-      setAtShop(Array.isArray(a) ? a : [])
-      setRefHistory(Array.isArray(h) ? h : [])
-    }
-    if (tab === 'workorders') {
-      const [c, op, da] = await Promise.all([
-        getJson(base + 'type=completed&from=' + fromDate + '&to=' + toDate),
-        getJson(base + 'type=open'),
-        getJson(base + 'type=donated-abandoned'),
-      ])
-      setCompleted(Array.isArray(c) ? c : [])
-      setOpenOrders(Array.isArray(op) ? op : [])
-      setDonatedAbandoned(Array.isArray(da) ? da : [])
-    }
-    if (tab === 'parts') {
-      const [pp, r, pr] = await Promise.all([
-        getJson(base + 'type=parts-pending'),
-        getJson(base + 'type=revenue'),
-        getJson(base + 'type=parts-report&from=' + fromDate + '&to=' + toDate),
-      ])
-      setPendingParts(Array.isArray(pp) ? pp : [])
-      setRevenue(Array.isArray(r) ? r : [])
-      setPartsReport(Array.isArray(pr) ? pr : [])
-    }
-    if (tab === 'admin') {
-      const [nr, ds, tc, inv] = await Promise.all([
-        getJson(base + 'type=needs-reminder'),
-        getJson(base + 'type=denied-service'),
-        getJson(base + 'type=thursday-check'),
-        getJson('/api/admin/invoice-backfill'),
-      ])
-      setInvoiceFill(inv && Array.isArray(inv.rows) ? inv : { rows: [], backupCount: 0 })
-      setNeedsReminder(Array.isArray(nr) ? nr : [])
-      setDeniedService(Array.isArray(ds) ? ds : [])
-      setThursdayCheck(tc && Array.isArray(tc.rows) ? tc : { rows: [], cutoff: '' })
-    }
-    setLoadError(errors.length ? Array.from(new Set(errors)).join(' | ') : '')
-    setLoading(false)
-  }, [tab, fromDate, toDate])
+  async function markReceived(partId: string) {
+    const today = new Date().toISOString().split('T')[0]
+    const res = await fetch('/api/parts/' + partId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'received', date_received: today }),
+    })
+    const updated = await res.json()
+    setParts(p => p.map(x => x.id === partId ? updated : x))
+    const woRes = await fetch('/api/work-orders/' + id)
+    const woData = normalizeDates(await woRes.json())
+    setWo(woData)
+    setForm(woData)
+  }
 
-  useEffect(() => { load() }, [load])
+  async function saveToCatalog(part: Part) {
+    const res = await fetch('/api/saved-parts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: part.name, partNumber: part.partNumber, supplier: part.supplier, cost: part.cost, price: part.price }),
+    })
+    const saved = await res.json()
+    setCatalog(c => [...c, saved])
+    alert(part.name + ' saved to catalog!')
+  }
 
-  const TABS: { id: ReportTab; label: string }[] = [
-    { id: 'financial',  label: 'Financial' },
-    { id: 'referral',   label: 'Referral Shop' },
-    { id: 'workorders', label: 'Work Orders' },
-    { id: 'parts',      label: 'Parts' },
-    { id: 'admin',      label: 'Administrative' },
-  ]
+  function loadFromCatalog(saved: SavedPart) {
+    setNewPart(p => ({ ...p, name: saved.name, partNumber: saved.partNumber, supplier: saved.supplier, cost: String(saved.cost), price: String(saved.price), fromShop: true }))
+    setSelectedSavedPartId(saved.id)
+    setShowCatalog(false)
+    setShowAddPart(true)
+  }
 
-  const needsDates = tab === 'financial' || tab === 'workorders' || tab === 'parts'
+  async function updatePart() {
+    if (!editingPart) return
+    const res = await fetch('/api/parts/' + editingPart, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: partForm.name,
+        part_number: partForm.partNumber,
+        supplier: partForm.supplier,
+        quantity: partForm.quantity,
+        cost: partForm.cost,
+        price: partForm.price,
+      }),
+    })
+    const updated = await res.json()
+    setParts(p => p.map(x => x.id === editingPart ? updated : x))
+    setEditingPart(null)
+    setPartForm({})
+  }
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
-      <style dangerouslySetInnerHTML={{ __html: PRINT_STYLES }} />
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-800">Reports</h1>
-        <div className="flex items-center gap-3">
-          {needsDates && (
-            <div className="flex items-center gap-2 text-sm print:hidden">
-              <label className="text-gray-500">From</label>
-              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-                className="border rounded px-2 py-1 text-sm" />
-              <label className="text-gray-500">To</label>
-              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-                className="border rounded px-2 py-1 text-sm" />
-              <button onClick={load}
-                className="bg-orange-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-orange-600">
-                Run
-              </button>
-            </div>
-          )}
-          <button onClick={() => window.print()}
-            className="print:hidden flex items-center gap-1.5 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
-            Print / Save PDF
-          </button>
-        </div>
-      </div>
+  async function deletePart(partId: string) {
+    if (!confirm('Delete this part?')) return
+    await fetch('/api/parts/' + partId, { method: 'DELETE' })
+    setParts(p => p.filter(x => x.id !== partId))
+  }
 
-      <div className="flex gap-2 print:hidden">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={'px-4 py-2 rounded-lg text-sm font-medium ' + (tab === t.id ? 'bg-orange-500 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50')}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+  async function deleteWorkOrder() {
+    if (!confirm('Delete this work order? This cannot be undone.')) return
+    await fetch('/api/work-orders/' + id, { method: 'DELETE' })
+    router.push('/')
+  }
 
-      {loading && <p className="text-sm text-gray-400 text-center py-8">Loading...</p>}
+  if (!wo) return <div className="p-8 text-gray-500">Loading...</div>
 
-      {!loading && loadError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 print:hidden">
-          <p className="font-semibold">A report could not load, so some sections below may look empty when they are not.</p>
-          <p className="text-xs mt-1 break-words">{loadError}</p>
-        </div>
-      )}
+  // Use this work order's own snapshot of source/referral shop (captured when it was
+  // created) so later changes to the customer's classification never rewrite this
+  // job's history. Falls back to the live customer record for older jobs created
+  // before this field existed.
+  const woSource = wo.source || customer?.source
+  const woReferralShop = wo.referralShop || customer?.referralShop
 
-      {/* Print-only header */}
-      <div className="hidden print:block mb-4 pb-3 border-b">
-        <div className="text-xl font-bold text-gray-900">WW Small Engine - Reports</div>
-        <div className="text-sm text-gray-500 mt-1">
-          {tab === 'financial' && 'Financial Reports - ' + fromDate + ' to ' + toDate}
-          {tab === 'referral' && 'Referral Shop Reports'}
-          {tab === 'workorders' && 'Completed Work Orders - ' + fromDate + ' to ' + toDate}
-          {tab === 'parts' && 'Pending Parts Report'}
-          {tab === 'admin' && 'Administrative - Unpaid Follow-Up'}
-        </div>
-      </div>
-
-      {!loading && tab === 'financial' && (
-        <div className="space-y-5">
-
-          {/* Payout Summary */}
-          <Section title={'Money Paid Out Summary - ' + fromDate + ' to ' + toDate} subtitle="Only jobs actually paid so far - not invoiced estimates. Direct jobs are listed by the date paid (older jobs without one use the completion date). Jobs paid after 2026-07-01 go 100% to whoever is assigned (50/50 if Both); jobs paid on or before that date still split 60/40 Wade/Wayne to match how they were actually paid out.">
-            {payouts.length === 0 ? <Empty /> : (() => {
-              const totalPartsCostAll = payouts.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
-
-              const calcRow = (row: Record<string, unknown>, isRef: boolean) => {
-                const partsCharged = Number(row.parts_charged) || 0
-                const amtPaid = Number(row.amount_paid) || 0
-                const shopAmt = Number(row.shop_payment_amount) || 0
-                const shopReceived = row.shop_payment_received === true
-                const isPaid = isRef ? shopReceived : (amtPaid > 0)
-                const paidAmount = isRef ? shopAmt : amtPaid
-                const afterParts = paidAmount - partsCharged
-                const refCut = isRef && afterParts > 0 ? afterParts * 0.20 : 0
-                const net = afterParts - refCut
-                return { paidAmount, partsCharged, afterParts, refCut, net, isPaid }
-              }
-
-              const inHouse = payouts.filter(r => r.customer_source !== 'referral' && calcRow(r, false).isPaid)
-              const referral = payouts.filter(r => r.customer_source === 'referral' && calcRow(r, true).isPaid)
-
-              // Per-technician payout method changed on 2026-07-30: jobs completed/paid
-              // Payout method changed for anything paid after 2026-07-01: jobs paid on
-              // or before that date still split 60/40 (matching how they were actually paid
-              // out in real life); jobs paid after that date pay 100% to whoever is assigned
-              // (Wade or Wayne solo), or 50/50 if marked Both.
-              const SPLIT_CUTOVER_DATE = '2026-07-01'
-
-              const sumRows = (rows: Record<string, unknown>[], isRef: boolean) => {
-                let revenue = 0, parts = 0, partsCost = 0, shopCut = 0, net = 0
-                const byTech: Record<string, number> = {}
-                rows.forEach(row => {
-                  const c = calcRow(row, isRef)
-                  revenue += c.paidAmount; parts += c.partsCharged; shopCut += c.refCut
-                  net += c.net
-                  partsCost += Number(row.parts_cost) || 0
-                  const effDate = row.effective_date ? String(row.effective_date).slice(0, 10) : ''
-                  if (effDate && effDate <= SPLIT_CUTOVER_DATE) {
-                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.60
-                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.40
-                  } else if (row.technician === 'Wade') {
-                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net
-                  } else if (row.technician === 'Wayne') {
-                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net
-                  } else if (row.technician === 'Both') {
-                    byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.50
-                    byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.50
-                  } else {
-                    const tech = String(row.technician || 'Unassigned')
-                    byTech[tech] = (byTech[tech] || 0) + c.net
-                  }
-                })
-                return { revenue, parts, partsCost, shopCut, net, byTech }
-              }
-
-              const ihTotals = sumRows(inHouse, false)
-              const refTotals = sumRows(referral, true)
-              const totalPaid = ihTotals.revenue + refTotals.revenue
-
-              const combinedByTech: Record<string, number> = {}
-              for (const [tech, amt] of Object.entries(ihTotals.byTech)) combinedByTech[tech] = (combinedByTech[tech] || 0) + amt
-              for (const [tech, amt] of Object.entries(refTotals.byTech)) combinedByTech[tech] = (combinedByTech[tech] || 0) + amt
-
-              const tbl = (rows: Record<string, unknown>[], isRef: boolean, totals: { revenue: number; parts: number; shopCut: number; net: number }) => (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                        <th className="pb-2 pr-3">WO#</th>
-                        <th className="pb-2 pr-3">Customer</th>
-                        <th className="pb-2 pr-3">Date</th>
-                        {isRef && <th className="pb-2 pr-3">Shop</th>}
-                        <th className="pb-2 pr-3">Technician</th>
-                        <th className="pb-2 pr-3 text-right">Amount Paid</th>
-                        <th className="pb-2 pr-3 text-right">Parts Chg</th>
-                        {isRef && <th className="pb-2 pr-3 text-right">Shop 20%</th>}
-                        <th className="pb-2 text-right">Net Earned</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(row => {
-                        const c = calcRow(row, isRef)
-                        return (
-                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                            <td className="py-1.5 pr-3">
-                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                {String(row.order_number)}
-                              </Link>
-                            </td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.effective_date ?? row.date_complete)}</td>
-                            {isRef && <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.referral_shop || '-')}</td>}
-                            <td className="py-1.5 pr-3">
-                              <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
-                                {String(row.technician || 'Unassigned')}
-                              </span>
-                              {(row.effective_date ? String(row.effective_date).slice(0, 10) : '') <= '2026-07-01' && (
-                                <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
-                              )}
-                            </td>
-                            <td className="py-1.5 pr-3 text-right">{fmt(c.paidAmount)}</td>
-                            <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
-                            {isRef && <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.refCut)}</td>}
-                            <td className="py-1.5 text-right font-medium">{fmt(c.net)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 font-semibold text-sm">
-                        <td className="pt-2 text-gray-500" colSpan={isRef ? 5 : 4}>Subtotal</td>
-                        <td className="pt-2 text-right">{fmt(totals.revenue)}</td>
-                        <td className="pt-2 text-right text-gray-600">{totals.parts > 0 ? fmt(totals.parts) : '-'}</td>
-                        {isRef && <td className="pt-2 text-right text-orange-500">{fmt(totals.shopCut)}</td>}
-                        <td className="pt-2 text-right">{fmt(totals.net)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )
-
-              return (
-                <div className="space-y-5">
-                  {inHouse.length === 0 && referral.length === 0 ? (
-                    <p className="text-sm text-gray-400 italic py-4 text-center">No paid jobs in this date range yet - check Outstanding Invoices below</p>
-                  ) : (
-                    <>
-                      {inHouse.length > 0 && (
-                        <div>
-                          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">In-House Jobs</h3>
-                          {tbl(inHouse, false, ihTotals)}
-                        </div>
-                      )}
-                      {referral.length > 0 && (
-                        <div>
-                          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Referral Jobs</h3>
-                          {tbl(referral, true, refTotals)}
-                        </div>
-                      )}
-                    </>
-                  )}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-2 pt-3 border-t-2">
-                    <div className="bg-red-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-red-500 mb-1">Total Spent (Parts)</div>
-                      <div className="font-bold text-red-600">{fmt(totalPartsCostAll)}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">All completed jobs</div>
-                    </div>
-                    <div className="bg-green-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-green-600 mb-1">Total Paid</div>
-                      <div className="font-bold text-green-700">{fmt(totalPaid)}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">Actually received</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-gray-500 mb-1">Net (Paid - Spent)</div>
-                      <div className="font-bold text-gray-800">{fmt(totalPaid - totalPartsCostAll)}</div>
-                    </div>
-                    <div className="bg-orange-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-orange-600 mb-1">Wade Total</div>
-                      <div className="font-bold text-orange-600">{fmt(combinedByTech['Wade'] || 0)}</div>
-                    </div>
-                    <div className="bg-blue-50 rounded-lg p-3 text-center">
-                      <div className="text-xs text-blue-600 mb-1">Wayne Total</div>
-                      <div className="font-bold text-blue-600">{fmt(combinedByTech['Wayne'] || 0)}</div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400">Total Spent (Parts) includes every completed job in this date range, whether paid or not. Wade and Wayne totals show what each tech earned from the jobs assigned to them - no splitting between them.</p>
-                </div>
-              )
-            })()}
-          </Section>
-
-          {/* Outstanding Invoices */}
-          <Section title="Outstanding Invoices" subtitle={"Current as of today (" + today + ") \u2014 completed work not yet paid or picked up, in-house and referral"}>
-            {outstanding.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Type</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Date In</th>
-                      <th className="pb-2 pr-3">Completed / Returned</th>
-                      <th className="pb-2 pr-3 text-right">Invoiced</th>
-                      <th className="pb-2 pr-3 text-right">Paid</th>
-                      <th className="pb-2 text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {outstanding.map(row => {
-                      const isRef = row.customer_source === 'referral'
-                      const charged = Number(row.amount_charged) || 0
-                      const paid = Number(row.amount_paid) || 0
-                      const completedDate = isRef ? row.referral_dropoff_date : row.date_complete
-                      return (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                              {String(row.order_number)}
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3">
-                            {isRef
-                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
-                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(completedDate)}</td>
-                          <td className="py-1.5 pr-3 text-right font-medium">
-                            {charged > 0
-                              ? fmt(charged)
-                              : <span className="text-gray-400 text-xs">not invoiced</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-right text-red-500">{paid > 0 ? fmt(paid) : '-'}</td>
-                          <td className="py-1.5 text-right font-semibold text-orange-600">
-                            {charged > 0
-                              ? fmt(charged - paid)
-                              : <span className="text-gray-400 text-xs">-</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={6} className="pt-2 text-gray-600">Outstanding Balance</td>
-                      <td colSpan={3} className="pt-2 text-right text-red-600">
-                        {fmt(outstanding.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-
-          {/* No Charge Work Orders */}
-          <Section title="No Charge Work Orders" subtitle="Completed work marked No Charge - excluded from Outstanding Invoices above">
-            {noCharge.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Type</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Date In</th>
-                      <th className="pb-2 pr-3">Date Complete</th>
-                      <th className="pb-2 text-right">Parts Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {noCharge.map(row => {
-                      const isRef = row.customer_source === 'referral'
-                      return (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                              {String(row.order_number)}
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3">
-                            {isRef
-                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
-                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
-                          <td className="py-1.5 text-right text-red-500">{Number(row.parts_cost) > 0 ? fmt(row.parts_cost) : '-'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={6} className="pt-2 text-gray-600">{noCharge.length} work order{noCharge.length !== 1 ? 's' : ''}</td>
-                      <td className="pt-2 text-right text-red-600">
-                        {fmt(noCharge.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-
-          {/* Not Paid - every way Cavin's didn't get paid */}
-          <Section title="Not Paid - Work Done, No Payment Received" subtitle="Every work order we did not get paid for: equipment picked up or returned with no payment recorded, abandoned, donated, or done for no charge. Full history. Values are invoice totals before any referral shop share, or an estimate (labor + parts charged) when no invoice amount was entered.">
-            {unpaidWork.length === 0 ? <Empty /> : (() => {
-              const filteredUnpaid = unpaidFilter === 'all' ? unpaidWork : unpaidWork.filter(r => r.reason === unpaidFilter)
-              const totalsFor = (rows: Record<string, unknown>[]) => rows.reduce<{ value: number; parts: number; unpaid: number }>((t, r) => {
-                const v = unpaidValue(r).value
-                const paid = Number(r.amount_paid) || 0
-                return { value: t.value + v, parts: t.parts + (Number(r.parts_cost) || 0), unpaid: t.unpaid + Math.max(v - paid, 0) }
-              }, { value: 0, parts: 0, unpaid: 0 })
-              const tot = totalsFor(filteredUnpaid)
-              return (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2 print:hidden">
-                    <button onClick={() => setUnpaidFilter('all')}
-                      className={'text-xs px-3 py-1 rounded-full border ' + (unpaidFilter === 'all' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 hover:bg-gray-50')}>
-                      All ({unpaidWork.length})
-                    </button>
-                    {UNPAID_REASONS.map(rs => {
-                      const n = unpaidWork.filter(r => r.reason === rs.id).length
-                      return (
-                        <button key={rs.id} onClick={() => setUnpaidFilter(rs.id)}
-                          className={'text-xs px-3 py-1 rounded-full border ' + (unpaidFilter === rs.id ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 hover:bg-gray-50')}>
-                          {rs.label} ({n})
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {UNPAID_REASONS.map(rs => {
-                      const rows = unpaidWork.filter(r => r.reason === rs.id)
-                      const t = totalsFor(rows)
-                      return (
-                        <div key={rs.id} className="border rounded-lg p-2.5">
-                          <span className={'text-xs px-2 py-0.5 rounded font-medium ' + rs.cls}>{rs.label}</span>
-                          <div className="text-lg font-bold text-gray-800 mt-1.5">{rows.length}</div>
-                          <div className="text-xs text-gray-500">Value {fmt(t.value)}</div>
-                          <div className="text-xs text-red-500">Parts cost {fmt(t.parts)}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {filteredUnpaid.length === 0 ? <Empty /> : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                            <th className="pb-2 pr-3">WO#</th>
-                            <th className="pb-2 pr-3">Customer</th>
-                            <th className="pb-2 pr-3">Type</th>
-                            <th className="pb-2 pr-3">Equipment</th>
-                            <th className="pb-2 pr-3">Reason</th>
-                            <th className="pb-2 pr-3">Date</th>
-                            <th className="pb-2 pr-3">Note</th>
-                            <th className="pb-2 pr-3 text-right">Value</th>
-                            <th className="pb-2 pr-3 text-right">Parts Cost</th>
-                            <th className="pb-2 text-right">Not Paid</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredUnpaid.map(row => {
-                            const isRef = row.customer_source === 'referral'
-                            const rs = UNPAID_REASONS.find(x => x.id === row.reason)
-                            const { value, est } = unpaidValue(row)
-                            const paid = Number(row.amount_paid) || 0
-                            const when = row.never_paid_date || row.referral_dropoff_date || row.date_complete || row.date_in
-                            return (
-                              <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                                <td className="py-1.5 pr-3">
-                                  <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                    {String(row.order_number)}
-                                  </Link>
-                                </td>
-                                <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                                <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
-                                  {isRef
-                                    ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
-                                    : <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
-                                </td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                                <td className="py-1.5 pr-3 whitespace-nowrap">
-                                  <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (rs ? rs.cls : 'bg-gray-100 text-gray-600')}>{rs ? rs.label : String(row.reason)}</span>
-                                </td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{fmtDate(when)}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 text-xs">{row.never_paid_note ? String(row.never_paid_note) : '-'}</td>
-                                <td className="py-1.5 pr-3 text-right">
-                                  {value > 0
-                                    ? (est ? <span className="text-gray-400 text-xs italic">est. {fmt(value)}</span> : fmt(value))
-                                    : <span className="text-gray-400 text-xs">-</span>}
-                                </td>
-                                <td className="py-1.5 pr-3 text-right text-red-500">{Number(row.parts_cost) > 0 ? fmt(row.parts_cost) : '-'}</td>
-                                <td className="py-1.5 text-right font-semibold text-orange-600">{value > 0 ? fmt(Math.max(value - paid, 0)) : '-'}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t-2 font-semibold">
-                            <td colSpan={7} className="pt-2 text-gray-600">{filteredUnpaid.length} work order{filteredUnpaid.length !== 1 ? 's' : ''}</td>
-                            <td className="pt-2 pr-3 text-right">{fmt(tot.value)}</td>
-                            <td className="pt-2 pr-3 text-right text-red-600">{fmt(tot.parts)}</td>
-                            <td className="pt-2 text-right text-orange-600">{fmt(tot.unpaid)}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </Section>
-
-        </div>
-      )}
-
-      {!loading && tab === 'referral' && (
-        <div className="space-y-5">
-
-          {/* Trip Report */}
-          {/* Shop Payment Settlement */}
-          <Section title="Shop Payment Settlement" subtitle="Mark work orders as paid on the referral shop's page, then run this for the day you visited the shop">
-            <div className="flex items-end gap-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Payment Date</label>
-                <input type="date" value={settleDate} onChange={e => setSettleDate(e.target.value)}
-                  className="border rounded-md px-3 py-1.5 text-sm" />
-              </div>
-              <button onClick={() => loadSettlement(settleDate)}
-                className="bg-orange-500 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600">
-                {settleLoading ? 'Loading...' : 'Generate Report'}
-              </button>
-            </div>
-            {!hasRunSettlement ? (
-              <p className="text-sm text-gray-400 italic py-4 text-center">Pick the date you were paid at the shop and click Generate Report</p>
-            ) : settleData.length === 0 ? (
-              <Empty />
-            ) : (() => {
-              const SPLIT_CUTOVER_DATE = '2026-07-01'
-              // This report is already filtered to a single shop_payment_date (settleDate),
-              // so the cutover check is based on the actual payment date, not the job's
-              // completion date.
-              const useOldSplit = settleDate <= SPLIT_CUTOVER_DATE
-              const calc = (row: Record<string, unknown>) => {
-                const partsCharged = Number(row.parts_charged) || 0
-                const partsCost = Number(row.parts_cost) || 0
-                const shopAmt = Number(row.shop_payment_amount) || 0
-                const amtCharged = Number(row.amount_charged) || 0
-                const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
-                const paid = shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : laborEst + partsCharged
-                const afterParts = paid - partsCharged
-                const shopCut = afterParts > 0 ? afterParts * 0.20 : 0
-                const net = afterParts - shopCut
-                return { paid, partsCharged, partsCost, shopCut, net, useOldSplit }
-              }
-              const addToByTech = (byTech: Record<string, number>, row: Record<string, unknown>, c: { net: number; useOldSplit: boolean }) => {
-                if (c.useOldSplit) {
-                  byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.60
-                  byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.40
-                } else if (row.technician === 'Wade') {
-                  byTech['Wade'] = (byTech['Wade'] || 0) + c.net
-                } else if (row.technician === 'Wayne') {
-                  byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net
-                } else if (row.technician === 'Both') {
-                  byTech['Wade'] = (byTech['Wade'] || 0) + c.net * 0.50
-                  byTech['Wayne'] = (byTech['Wayne'] || 0) + c.net * 0.50
-                } else {
-                  const tech = String(row.technician || 'Unassigned')
-                  byTech[tech] = (byTech[tech] || 0) + c.net
-                }
-              }
-
-              const shopGroups: Record<string, Record<string, unknown>[]> = {}
-              settleData.forEach(row => {
-                const shop = String(row.referral_shop || 'Other Shop')
-                if (!shopGroups[shop]) shopGroups[shop] = []
-                shopGroups[shop].push(row)
-              })
-
-              const grandTotals = { paid: 0, parts: 0, partsCost: 0, shopCut: 0, byTech: {} as Record<string, number> }
-              settleData.forEach(row => {
-                const c = calc(row)
-                grandTotals.paid += c.paid; grandTotals.parts += c.partsCharged
-                grandTotals.partsCost += c.partsCost; grandTotals.shopCut += c.shopCut
-                addToByTech(grandTotals.byTech, row, c)
-              })
-
-              return (
-                <div className="space-y-6">
-                  {Object.keys(shopGroups).sort().map(shop => {
-                    const rows = shopGroups[shop]
-                    const shopTotals = { paid: 0, parts: 0, partsCost: 0, shopCut: 0, byTech: {} as Record<string, number> }
-                    rows.forEach(row => {
-                      const c = calc(row)
-                      shopTotals.paid += c.paid; shopTotals.parts += c.partsCharged
-                      shopTotals.partsCost += c.partsCost; shopTotals.shopCut += c.shopCut
-                      addToByTech(shopTotals.byTech, row, c)
-                    })
-                    return (
-                      <div key={shop}>
-                        <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{shop}</h4>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                                <th className="pb-2 pr-3">WO#</th>
-                                <th className="pb-2 pr-3">Customer</th>
-                                <th className="pb-2 pr-3">Technician</th>
-                                <th className="pb-2 pr-3 text-right">Amount Paid</th>
-                                <th className="pb-2 pr-3 text-right">Parts Chg to Customer</th>
-                                <th className="pb-2 pr-3 text-right">Actual Part Cost</th>
-                                <th className="pb-2 pr-3 text-right">To Referral Shop</th>
-                                <th className="pb-2 text-right">Net Earned</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rows.map(row => {
-                                const c = calc(row)
-                                return (
-                                  <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                                    <td className="py-1.5 pr-3">
-                                      <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                        {String(row.order_number)}
-                                      </Link>
-                                    </td>
-                                    <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                                    <td className="py-1.5 pr-3">
-                                      <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
-                                        {String(row.technician || 'Unassigned')}
-                                      </span>
-                                      {c.useOldSplit && (
-                                        <span className="text-[10px] text-gray-400 ml-1" title="Split 60/40 Wade/Wayne - before payout method change">*60/40</span>
-                                      )}
-                                    </td>
-                                    <td className="py-1.5 pr-3 text-right font-medium">{fmt(c.paid)}</td>
-                                    <td className="py-1.5 pr-3 text-right text-gray-500">{c.partsCharged > 0 ? fmt(c.partsCharged) : '-'}</td>
-                                    <td className="py-1.5 pr-3 text-right text-red-500">{c.partsCost > 0 ? fmt(c.partsCost) : '-'}</td>
-                                    <td className="py-1.5 pr-3 text-right text-orange-500">{fmt(c.shopCut)}</td>
-                                    <td className="py-1.5 text-right font-medium">{fmt(c.net)}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                            <tfoot>
-                              <tr className="border-t-2 font-semibold">
-                                <td colSpan={3} className="pt-2 text-gray-600">{shop} subtotal ({rows.length} WO{rows.length !== 1 ? 's' : ''})</td>
-                                <td className="pt-2 text-right">{fmt(shopTotals.paid)}</td>
-                                <td className="pt-2 text-right text-gray-600">{fmt(shopTotals.parts)}</td>
-                                <td className="pt-2 text-right text-red-600">{fmt(shopTotals.partsCost)}</td>
-                                <td className="pt-2 text-right text-orange-500">{fmt(shopTotals.shopCut)}</td>
-                                <td className="pt-2 text-right">-</td>
-                              </tr>
-                              <tr>
-                                <td colSpan={8} className="pt-2">
-                                  <div className="flex gap-4 justify-end text-sm font-semibold">
-                                    <span className="text-orange-600">Wade: {fmt(shopTotals.byTech['Wade'] || 0)}</span>
-                                    <span className="text-blue-600">Wayne: {fmt(shopTotals.byTech['Wayne'] || 0)}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  <div className="pt-3 border-t-2">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Grand Totals - All Shops ({settleData.length} WO{settleData.length !== 1 ? 's' : ''})</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      <div className="bg-gray-50 rounded-lg p-3 text-center">
-                        <div className="text-xs text-gray-500 mb-1">Amount Paid</div>
-                        <div className="font-bold text-gray-800">{fmt(grandTotals.paid)}</div>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-3 text-center">
-                        <div className="text-xs text-gray-500 mb-1">Parts Charged</div>
-                        <div className="font-bold text-gray-800">{fmt(grandTotals.parts)}</div>
-                      </div>
-                      <div className="bg-red-50 rounded-lg p-3 text-center">
-                        <div className="text-xs text-red-500 mb-1">Actual Part Cost</div>
-                        <div className="font-bold text-red-600">{fmt(grandTotals.partsCost)}</div>
-                      </div>
-                      <div className="bg-orange-50 rounded-lg p-3 text-center">
-                        <div className="text-xs text-orange-600 mb-1">Wade</div>
-                        <div className="font-bold text-orange-600">{fmt(grandTotals.byTech['Wade'] || 0)}</div>
-                      </div>
-                      <div className="bg-blue-50 rounded-lg p-3 text-center">
-                        <div className="text-xs text-blue-600 mb-1">Wayne</div>
-                        <div className="font-bold text-blue-600">{fmt(grandTotals.byTech['Wayne'] || 0)}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })()}
-          </Section>
-
-          <Section title="Shop Trip Report">
-            <div className="flex items-end gap-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Trip Date</label>
-                <input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)}
-                  className="border rounded-md px-3 py-1.5 text-sm" />
-              </div>
-              <button onClick={() => loadTrip(tripDate)}
-                className="bg-orange-500 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-orange-600">
-                {tripLoading ? 'Loading...' : 'Generate Report'}
-              </button>
-              {tripData && (
-                <button onClick={printTrip}
-                  className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-                  Print Trip Sheet
-                </button>
-              )}
-            </div>
-
-            {tripData && (() => {
-              const groupByShop = (rows: Record<string, unknown>[]) => {
-                const groups: Record<string, Record<string, unknown>[]> = {}
-                rows.forEach(r => {
-                  const shop = String(r.referral_shop || 'Other Shop')
-                  if (!groups[shop]) groups[shop] = []
-                  groups[shop].push(r)
-                })
-                return groups
-              }
-              const calcInv = (r: Record<string, unknown>) => { const sa = Number(r.shop_payment_amount) || 0; return sa > 0 ? sa : (Number(r.amount_charged) || 0) }
-              const calcOwes = (r: Record<string, unknown>) => (Number(r.labor_hours) || 0) * (Number(r.labor_rate) || 0) * 0.20
-
-              const shopSection = (rows: Record<string, unknown>[], showReturnedCol: boolean) => {
-                const groups = groupByShop(rows)
-                return Object.keys(groups).sort().map(shop => {
-                  const shopRows = groups[shop]
-                  const shopInv = shopRows.reduce((s, r) => s + calcInv(r), 0)
-                  const shopOwes = shopRows.reduce((s, r) => s + calcOwes(r), 0)
-                  return (
-                    <div key={shop} className="mb-4">
-                      <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{shop}</h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                              <th className="pb-2 pr-3">WO#</th>
-                              <th className="pb-2 pr-3">Customer</th>
-                              <th className="pb-2 pr-3">Equipment</th>
-                              {showReturnedCol && <th className="pb-2 pr-3">Returned</th>}
-                              <th className="pb-2 pr-3">{showReturnedCol ? 'Notes' : 'Work Done / Notes'}</th>
-                              <th className="pb-2 pr-3 text-right">Invoice</th>
-                              <th className="pb-2 text-right text-orange-600">WW Owes Shop</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {shopRows.map(row => {
-                              const inv = calcInv(row)
-                              const owes = calcOwes(row)
-                              return (
-                                <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                                  <td className="py-1.5 pr-3">
-                                    <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
-                                  </td>
-                                  <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                                  <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                                  {showReturnedCol && <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>}
-                                  <td className="py-1.5 pr-3 text-gray-500 text-xs max-w-xs truncate">{String(row.work_done || row.complaint || '-')}</td>
-                                  <td className="py-1.5 pr-3 text-right">{inv > 0 ? fmt(inv) : '-'}</td>
-                                  <td className="py-1.5 text-right text-orange-600 font-medium">{owes > 0 ? fmt(owes) : '-'}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                          <tfoot>
-                            <tr className="border-t-2 font-semibold">
-                              <td colSpan={showReturnedCol ? 4 : 3}>{shop} subtotal</td>
-                              <td className="pt-2 text-right">{fmt(shopInv)}</td>
-                              <td className="pt-2 text-right text-orange-600">{fmt(shopOwes)}</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-                  )
-                })
-              }
-
-              return (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="font-semibold text-gray-700 mb-2">
-                      Dropping Off Today
-                      <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-normal">{tripData.thisTrip.length} items</span>
-                    </h3>
-                    {tripData.thisTrip.length === 0 ? (
-                      <p className="text-sm text-gray-400 italic">No drop-offs recorded for this date.</p>
-                    ) : shopSection(tripData.thisTrip, false)}
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold text-gray-700 mb-2">
-                      Previously Returned - Awaiting Shop Payment
-                      <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">{tripData.outstanding.length} items</span>
-                    </h3>
-                    {tripData.outstanding.length === 0 ? (
-                      <p className="text-sm text-green-600 italic">All caught up - no outstanding items.</p>
-                    ) : shopSection(tripData.outstanding, true)}
-                  </div>
-                </div>
-              )
-            })()}
-          </Section>
-
-          {/* At the Shop */}
-          <Section title="Currently at the Shop (Returned - Awaiting Payment)">
-            {atShop.length === 0 ? (
-              <p className="text-sm text-green-600 text-center py-4">All caught up - no outstanding items</p>
-            ) : (() => {
-              const groups: Record<string, Record<string, unknown>[]> = {}
-              atShop.forEach(row => {
-                const shop = String(row.referral_shop || 'Other Shop')
-                if (!groups[shop]) groups[shop] = []
-                groups[shop].push(row)
-              })
-              const calcOwes = (row: Record<string, unknown>) => {
-                const invoice = Number(row.amount_charged) || 0
-                const partsCharged = Number(row.parts_charged) || 0
-                const afterParts = invoice - partsCharged
-                return afterParts > 0 ? afterParts * 0.20 : 0
-              }
-              return (
-                <div className="space-y-5">
-                  {Object.keys(groups).sort().map(shop => {
-                    const rows = groups[shop]
-                    const shopInv = rows.reduce((s, row) => s + (Number(row.amount_charged) || 0), 0)
-                    const shopOwes = rows.reduce((s, row) => s + calcOwes(row), 0)
-                    return (
-                      <div key={shop}>
-                        <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{shop}</h4>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                                <th className="pb-2 pr-3">WO#</th>
-                                <th className="pb-2 pr-3">Customer</th>
-                                <th className="pb-2 pr-3">Equipment</th>
-                                <th className="pb-2 pr-3">Returned</th>
-                                <th className="pb-2 pr-3 text-right">Invoice</th>
-                                <th className="pb-2 text-right text-orange-600">WW Owes Shop (20%)</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rows.map(row => {
-                                const invoice = Number(row.amount_charged) || 0
-                                const wwOwes = calcOwes(row)
-                                return (
-                                  <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                                    <td className="py-1.5 pr-3">
-                                      <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                        {String(row.order_number)}
-                                      </Link>
-                                    </td>
-                                    <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                                    <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                                    <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
-                                    <td className="py-1.5 pr-3 text-right">{invoice > 0 ? fmt(invoice) : '-'}</td>
-                                    <td className="py-1.5 text-right text-orange-600 font-medium">{wwOwes > 0 ? fmt(wwOwes) : '-'}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                            <tfoot>
-                              <tr className="border-t-2 font-semibold">
-                                <td colSpan={4} className="pt-2 text-gray-600">{shop} subtotal</td>
-                                <td className="pt-2 text-right">{fmt(shopInv)}</td>
-                                <td className="pt-2 text-right text-orange-600">{fmt(shopOwes)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <div className="flex justify-end gap-6 pt-2 border-t-2 text-sm font-semibold">
-                    <span>All Shops Invoice Total: {fmt(atShop.reduce((s, row) => s + (Number(row.amount_charged) || 0), 0))}</span>
-                    <span className="text-orange-600">All Shops WW Owes: {fmt(atShop.reduce((s, row) => s + calcOwes(row), 0))}</span>
-                  </div>
-                </div>
-              )
-            })()}
-          </Section>
-
-          {/* Full Referral History */}
-          <Section title="Referral Settlement History">
-            {refHistory.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Shop</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Returned to Shop</th>
-                      <th className="pb-2 pr-3 text-right">Invoice Amount</th>
-                      <th className="pb-2 pr-3 text-right">Invoice Paid Date</th>
-                      <th className="pb-2 pr-3 text-right text-orange-600">Paid to Shop</th>
-                      <th className="pb-2 text-right">Shop Paid Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {refHistory.map(row => {
-                      const shopAmt = Number(row.shop_payment_amount) || 0
-                      const amtCharged = Number(row.amount_charged) || 0
-                      const partsCharged = Number(row.parts_charged) || 0
-                      const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
-                      const invoice = shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : 0
-                      const isEst = invoice === 0
-                      const estTotal = laborEst + partsCharged
-                      const afterParts = invoice > 0 ? invoice - partsCharged : estTotal - partsCharged
-                      const neverPaid = row.never_paid === true
-                      const paidToShop = !neverPaid && afterParts > 0 ? afterParts * 0.20 : 0
-                      return (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                              {String(row.order_number)}
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3 text-xs whitespace-nowrap">
-                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Other Shop')}</span>
-                            {neverPaid && <span className="ml-1 bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">No Payment Recorded</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date)}</td>
-                          <td className="py-1.5 pr-3 text-right">
-                            {isEst
-                              ? <span className="text-gray-400 text-xs italic">{estTotal > 0 ? 'est. ' + fmt(estTotal) : '-'}</span>
-                              : <span className="font-medium">{fmt(invoice)}</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-right text-gray-500 text-xs">{row.shop_payment_date ? String(row.shop_payment_date).slice(0,10) : '-'}</td>
-                          <td className="py-1.5 pr-3 text-right text-orange-600 font-medium">{paidToShop > 0 ? fmt(paidToShop) : '-'}</td>
-                          <td className="py-1.5 text-right text-gray-500 text-xs">{row.commission_paid_date ? String(row.commission_paid_date).slice(0,10) : '-'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={8} className="pt-2 text-gray-600">Total Paid to Shop (All Shops)</td>
-                      <td className="pt-2 text-right text-orange-600">
-                        {fmt(refHistory.reduce((s, row) => {
-                          if (row.never_paid === true) return s
-                          const shopAmt = Number(row.shop_payment_amount) || 0
-                          const amtCharged = Number(row.amount_charged) || 0
-                          const partsCharged = Number(row.parts_charged) || 0
-                          const laborEst = (Number(row.labor_hours) || 0) * (Number(row.labor_rate) || 80)
-                          const invoice = shopAmt > 0 ? shopAmt : amtCharged > 0 ? amtCharged : laborEst + partsCharged
-                          const afterParts = invoice - partsCharged
-                          return s + (afterParts > 0 ? afterParts * 0.20 : 0)
-                        }, 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-        </div>
-      )}
-
-      {!loading && tab === 'workorders' && (
-        <div className="space-y-5">
-          <Section title="Currently Open Work Orders" subtitle={"Current as of today (" + today + ") \u2014 not yet completed, picked up, donated, or abandoned"}>
-            {openOrders.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Type</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Technician</th>
-                      <th className="pb-2 pr-3">Status</th>
-                      <th className="pb-2 pr-3">Date In</th>
-                      <th className="pb-2 text-right">Days Open</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {openOrders.map(row => {
-                      const isRef = row.customer_source === 'referral'
-                      const days = daysOpen(row.date_in)
-                      return (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                              {String(row.order_number)}
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3">
-                            {isRef
-                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
-                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3">
-                            <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
-                              {String(row.technician || '-')}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3">
-                            <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (STATUS_BADGE[String(row.status)] || 'bg-gray-100 text-gray-600')}>
-                              {statusLabel(row.status)}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                          <td className="py-1.5 text-right text-gray-600">{days !== null ? days + 'd' : '-'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={8} className="pt-2 text-gray-600">{openOrders.length} open work order{openOrders.length !== 1 ? 's' : ''}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-
-          <Section title={'Completed Jobs - ' + fromDate + ' to ' + toDate}>
-            {completed.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Technician</th>
-                      <th className="pb-2 pr-3">Completed</th>
-                      <th className="pb-2 pr-3 text-right">Hours</th>
-                      <th className="pb-2 text-right">Charged</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {completed.map(row => (
-                      <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                        <td className="py-1.5 pr-3">
-                          <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                            {String(row.order_number)}
-                          </Link>
-                        </td>
-                        <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                        <td className="py-1.5 pr-3">
-                          <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
-                            {String(row.technician || '-')}
-                          </span>
-                        </td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_complete)}</td>
-                        <td className="py-1.5 pr-3 text-right text-gray-500">{String(row.labor_hours || 0)}h</td>
-                        <td className="py-1.5 text-right font-medium">{fmt(row.amount_charged)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={5} className="pt-2 text-gray-600">{completed.length} jobs</td>
-                      <td className="pt-2 text-right text-gray-600">
-                        {completed.reduce((s, r) => s + Number(r.labor_hours || 0), 0).toFixed(1)}h
-                      </td>
-                      <td className="pt-2 text-right">
-                        {fmt(completed.reduce((s, r) => s + Number(r.amount_charged || 0), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-
-          <Section title="Donated / Abandoned Equipment" subtitle="Full history \u2014 not tracked as revenue or outstanding invoices">
-            {donatedAbandoned.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Status</th>
-                      <th className="pb-2 pr-3">Date In</th>
-                      <th className="pb-2 pr-3">Shop Status</th>
-                      <th className="pb-2 pr-3 text-right">Asking Price</th>
-                      <th className="pb-2 text-right">Sale Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {donatedAbandoned.map(row => (
-                      <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                        <td className="py-1.5 pr-3">
-                          <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                            {String(row.order_number)}
-                          </Link>
-                        </td>
-                        <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">
-                          {String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}
-                          {row.serial_number ? <span className="text-gray-400"> (S/N: {String(row.serial_number)})</span> : null}
-                        </td>
-                        <td className="py-1.5 pr-3">
-                          <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.status === 'donated' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800')}>
-                            {row.status === 'donated' ? 'Donated' : 'Abandoned'}
-                          </span>
-                        </td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs capitalize">{String(row.shop_status || '-')}</td>
-                        <td className="py-1.5 pr-3 text-right">{row.asking_price ? fmt(row.asking_price) : '-'}</td>
-                        <td className="py-1.5 text-right text-green-600 font-medium">{row.sale_price ? fmt(row.sale_price) : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={8} className="pt-2 text-gray-600">{donatedAbandoned.length} item{donatedAbandoned.length !== 1 ? 's' : ''}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-        </div>
-      )}
-
-      {!loading && tab === 'parts' && (
-        <div className="space-y-5">
-          <Section title="Parts Ordered - Not Yet Received">
-            {pendingParts.length === 0 ? (
-              <p className="text-sm text-green-600 text-center py-4">All parts have been received</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">Part</th>
-                      <th className="pb-2 pr-3">Part #</th>
-                      <th className="pb-2 pr-3">Supplier</th>
-                      <th className="pb-2 pr-3">Work Order</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3 text-right">Qty</th>
-                      <th className="pb-2 pr-3">Ordered</th>
-                      <th className="pb-2 text-right">Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingParts.map(row => (
-                      <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                        <td className="py-1.5 pr-3 font-medium">{String(row.name)}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs font-mono">{String(row.part_number || '-')}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.supplier || '-')}</td>
-                        <td className="py-1.5 pr-3">
-                          <Link href={'/work-orders/' + row.work_order_id} className="text-blue-600 hover:underline font-mono text-xs">
-                            {String(row.order_number)}
-                          </Link>
-                        </td>
-                        <td className="py-1.5 pr-3 text-gray-600 text-xs">{String(row.customer_name || '-')}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                        <td className="py-1.5 pr-3 text-right">{String(row.quantity)}</td>
-                        <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_ordered)}</td>
-                        <td className="py-1.5 text-right text-red-500">{fmt(Number(row.cost) * Number(row.quantity))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={8} className="pt-2 text-gray-600">{pendingParts.length} item{pendingParts.length !== 1 ? 's' : ''} pending</td>
-                      <td className="pt-2 text-right text-red-600">
-                        {fmt(pendingParts.reduce((s, r) => s + Number(r.cost || 0) * Number(r.quantity || 0), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-
-          {/* Parts Profit Report */}
-          <Section title={'Parts Report - ' + fromDate + ' to ' + toDate}>
-            {partsReport.length === 0 ? <Empty /> : (() => {
-              const totalCost = partsReport.reduce((s, r) => s + (Number(r.parts_cost) || 0), 0)
-              const totalCharged = partsReport.reduce((s, r) => s + (Number(r.parts_charged) || 0), 0)
-              const totalProfit = totalCharged - totalCost
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                        <th className="pb-2 pr-3">WO#</th>
-                        <th className="pb-2 pr-3">Date In</th>
-                        <th className="pb-2 pr-3">Customer</th>
-                        <th className="pb-2 pr-3">Equipment</th>
-                        <th className="pb-2 pr-3">Part(s)</th>
-                        <th className="pb-2 pr-3 text-right">WW Paid</th>
-                        <th className="pb-2 pr-3 text-right">Charged to Customer</th>
-                        <th className="pb-2 text-right text-green-700">Parts Profit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {partsReport.map(row => {
-                        const cost = Number(row.parts_cost) || 0
-                        const charged = Number(row.parts_charged) || 0
-                        const profit = charged - cost
-                        return (
-                          <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                            <td className="py-1.5 pr-3">
-                              <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                                {String(row.order_number)}
-                              </Link>
-                            </td>
-                            <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap">{String(row.customer_name || '-')}</td>
-                            <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                            <td className="py-1.5 pr-3 text-xs text-gray-600">{String(row.part_names || '-')}</td>
-                            <td className="py-1.5 pr-3 text-right text-red-500">{fmt(cost)}</td>
-                            <td className="py-1.5 pr-3 text-right">{fmt(charged)}</td>
-                            <td className="py-1.5 text-right font-medium text-green-700">{fmt(profit)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 font-semibold">
-                        <td colSpan={5} className="pt-2 text-gray-600">{partsReport.length} work order{partsReport.length !== 1 ? 's' : ''} with parts</td>
-                        <td className="pt-2 text-right text-red-600">{fmt(totalCost)}</td>
-                        <td className="pt-2 text-right">{fmt(totalCharged)}</td>
-                        <td className="pt-2 text-right text-green-700">{fmt(totalProfit)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )
-            })()}
-          </Section>
-
-          {/* Revenue vs Parts Cost */}
-          <Section title="Revenue vs Parts Cost (Monthly)">
-            {revenue.length === 0 ? <Empty /> : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">Month</th>
-                      <th className="pb-2 pr-3 text-right">Jobs</th>
-                      <th className="pb-2 pr-3 text-right">Revenue</th>
-                      <th className="pb-2 pr-3 text-right">Parts Cost</th>
-                      <th className="pb-2 text-right">Gross Margin</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {revenue.map(row => {
-                      const rev = Number(row.revenue) || 0
-                      const cost = Number(row.parts_cost) || 0
-                      const margin = rev - cost
-                      return (
-                        <tr key={String(row.month)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3 font-medium">{String(row.month)}</td>
-                          <td className="py-1.5 pr-3 text-right text-gray-500">{String(row.job_count)}</td>
-                          <td className="py-1.5 pr-3 text-right">{fmt(rev)}</td>
-                          <td className="py-1.5 pr-3 text-right text-red-500">{fmt(cost)}</td>
-                          <td className="py-1.5 text-right font-medium text-green-700">{fmt(margin)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
-        </div>
-      )}
-
-      {!loading && tab === 'admin' && (
-        <div className="space-y-5">
-          <Section title="Equipment Not in the Shop? - Unpaid and Not Texted Since Thursday" subtitle={'Still unpaid, ready before ' + (thursdayCheck.cutoff || 'last Thursday') + ', and no pickup-reminder text logged since then. Because you only skip the Thursday text when the equipment is not there (or there is no phone number), these are probably picked up with no payment recorded. Check each one, then mark it or enter the payment. Equipment that is still here after ' + ABANDON_AFTER_DAYS + '+ days can be marked Abandoned.'}>
-            {(() => {
-              const withPhone = thursdayCheck.rows.filter(r => r.has_phone)
-              const noPhone = thursdayCheck.rows.filter(r => !r.has_phone)
-              const renderRow = (row: Record<string, unknown>, canMark: boolean) => {
-                const daysReady = daysOpen(row.referral_dropoff_date || row.date_complete || row.date_in)
-                const canAbandon = daysReady !== null && daysReady >= ABANDON_AFTER_DAYS
-                const isRef = row.customer_source === 'referral'
-                const charged = Number(row.amount_charged) || 0
-                const paid = Number(row.amount_paid) || 0
-                const readyDate = row.referral_dropoff_date || row.date_complete || row.date_in
-                return (
-                  <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="py-1.5 pr-3">
-                      <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                        {String(row.order_number)}
-                      </Link>
-                    </td>
-                    <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                    <td className="py-1.5 pr-3">
-                      {isRef
-                        ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
-                        : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                    <td className="py-1.5 pr-3 text-xs">{statusLabel(row.status)}</td>
-                    <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">
-                      {fmtDate(readyDate)}
-                      {daysReady !== null && <span className={'ml-1 ' + (canAbandon ? 'text-red-600 font-medium' : 'text-gray-400')}>({daysReady}d)</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-xs">
-                      {row.last_text_at
-                        ? <span className="text-gray-500">{fmtDate(row.last_text_at)}</span>
-                        : <span className="text-red-500 font-medium">Never texted</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right font-semibold text-orange-600">
-                      {charged > 0 ? fmt(charged - paid) : <span className="text-gray-400 text-xs">not invoiced</span>}
-                    </td>
-                    <td className="py-1.5 text-right whitespace-nowrap print:hidden">
-                      <div className="flex gap-1.5 justify-end">
-                        {canMark && (
-                          <button
-                            onClick={async () => {
-                              if (!confirm('Mark ' + String(row.order_number) + ' as Picked Up - No Payment Recorded? Use Undo on the work order if this was a mistake.')) return
-                              const ok = await markNoPaymentRecorded(String(row.id), 'Not in shop at Thursday check (no text since ' + thursdayCheck.cutoff + ')')
-                              if (ok) load()
-                            }}
-                            className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2 py-1 rounded hover:bg-amber-200">
-                            Picked up - no payment
-                          </button>
-                        )}
-                        {canAbandon && (
-                          <button
-                            onClick={async () => {
-                              if (!confirm('Mark ' + String(row.order_number) + ' as Abandoned? The equipment becomes WW property and is added to Shop Equipment. Only do this if the equipment is still in the shop.')) return
-                              const ok = await markAbandonedFromReport(row)
-                              if (ok) load()
-                              else alert('Something went wrong marking this abandoned - open the work order and try Mark as WW Property.')
-                            }}
-                            className="text-xs bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-200">
-                            Abandoned
-                          </button>
-                        )}
-                        {!canMark && !canAbandon && <span className="text-gray-400 text-xs">open WO to check</span>}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              }
-              const head = (
-                <thead>
-                  <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                    <th className="pb-2 pr-3">WO#</th>
-                    <th className="pb-2 pr-3">Customer</th>
-                    <th className="pb-2 pr-3">Type</th>
-                    <th className="pb-2 pr-3">Equipment</th>
-                    <th className="pb-2 pr-3">Status</th>
-                    <th className="pb-2 pr-3">Ready Since</th>
-                    <th className="pb-2 pr-3">Last Text</th>
-                    <th className="pb-2 pr-3 text-right">Balance</th>
-                    <th className="pb-2 text-right print:hidden">Action</th>
-                  </tr>
-                </thead>
-              )
-              return (
-                <div className="space-y-4">
-                  {withPhone.length === 0 ? (
-                    <p className="text-sm text-green-600 text-center py-4">Everything unpaid with a phone number was texted since {thursdayCheck.cutoff || 'last Thursday'} - nothing to check</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        {head}
-                        <tbody>{withPhone.map(r => renderRow(r, true))}</tbody>
-                        <tfoot>
-                          <tr className="border-t-2 font-semibold">
-                            <td colSpan={7} className="pt-2 text-gray-600">{withPhone.length} work order{withPhone.length !== 1 ? 's' : ''} to check</td>
-                            <td className="pt-2 pr-3 text-right text-orange-600">
-                              {fmt(withPhone.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
-                            </td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                  {noPhone.length > 0 && (
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">No phone number on file ({noPhone.length}) - you could not have texted these, so the missing text does not tell us anything. Check them by hand.</p>
-                      <div className="overflow-x-auto opacity-80">
-                        <table className="w-full text-sm">
-                          {head}
-                          <tbody>{noPhone.map(r => renderRow(r, false))}</tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </Section>
-
-          <Section title="Newly Ready - Not Texted Yet" subtitle="Unpaid work orders that became ready (or went to the referral shop) since last Thursday and haven't had a pickup text yet. These are the ones to text on your next Thursday round. Older unpaid jobs are in the report above.">
-            {needsReminder.length === 0 ? (
-              <p className="text-sm text-green-600 text-center py-4">Everything newly ready has been texted - nothing to send</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Phone</th>
-                      <th className="pb-2 pr-3">Type</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Ready Since</th>
-                      <th className="pb-2 pr-3">Last Text</th>
-                      <th className="pb-2 text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {needsReminder.map(row => {
-                      const isRef = row.customer_source === 'referral'
-                      const charged = Number(row.amount_charged) || 0
-                      const paid = Number(row.amount_paid) || 0
-                      return (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                              {String(row.order_number)}
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3">
-                            {row.customer_phone ? (
-                              <a href={'tel:' + String(row.customer_phone).replace(/[^0-9+]/g, '')} className="text-orange-600 hover:underline text-xs">
-                                {String(row.customer_phone)}
-                              </a>
-                            ) : <span className="text-gray-400 text-xs">-</span>}
-                          </td>
-                          <td className="py-1.5 pr-3">
-                            {isRef
-                              ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{String(row.referral_shop || 'Referral')}</span>
-                              : <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Direct</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.referral_dropoff_date || row.date_complete || row.date_in)}</td>
-                          <td className="py-1.5 pr-3 text-xs">
-                            {row.last_text_at
-                              ? <span className="text-gray-500">{fmtDate(row.last_text_at)}</span>
-                              : <span className="text-red-500 font-medium">Never texted</span>}
-                          </td>
-                          <td className="py-1.5 text-right font-semibold text-orange-600">
-                            {charged > 0
-                              ? fmt(charged - paid)
-                              : <span className="text-gray-400 text-xs">not invoiced</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={7} className="pt-2 text-gray-600">{needsReminder.length} work order{needsReminder.length !== 1 ? 's' : ''} to text</td>
-                      <td className="pt-2 text-right text-orange-600">
-                        {fmt(needsReminder.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-
-          <Section title="Completed Jobs With No Invoice Amount" subtitle="Finished jobs where the invoice total was never entered, which leaves reports and receipts guessing. Filling copies in the shop payment or amount already paid if there is one, otherwise the labor + parts estimate. No Charge, donated, abandoned, denied-service and no-payment-recorded jobs are skipped. You can undo the last fill.">
-            {invoiceFill.rows.length === 0 ? (
-              <p className="text-sm text-green-600 text-center py-4">Every finished job has an invoice amount</p>
-            ) : (
-              <div className="space-y-3">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                        <th className="pb-2 pr-3">WO#</th>
-                        <th className="pb-2 pr-3">Customer</th>
-                        <th className="pb-2 pr-3">Type</th>
-                        <th className="pb-2 pr-3">Status</th>
-                        <th className="pb-2 pr-3 text-right">Estimate</th>
-                        <th className="pb-2 pr-3 text-right">Paid</th>
-                        <th className="pb-2 pr-3 text-right">Would Fill With</th>
-                        <th className="pb-2">Based On</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoiceFill.rows.map(row => (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">{String(row.order_number)}</Link>
-                          </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3 text-xs">{row.customer_source === 'referral' ? 'Referral' : 'Direct'}</td>
-                          <td className="py-1.5 pr-3 text-xs">{statusLabel(row.status)}</td>
-                          <td className="py-1.5 pr-3 text-right text-gray-500">{fmt(row.estimate)}</td>
-                          <td className="py-1.5 pr-3 text-right text-green-600">{Number(row.amount_paid) > 0 ? fmt(row.amount_paid) : '-'}</td>
-                          <td className="py-1.5 pr-3 text-right font-semibold">{fmt(row.proposed)}</td>
-                          <td className="py-1.5 text-xs text-gray-500">{String(row.based_on)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 font-semibold">
-                        <td colSpan={6} className="pt-2 text-gray-600">{invoiceFill.rows.length} job{invoiceFill.rows.length !== 1 ? 's' : ''}</td>
-                        <td className="pt-2 pr-3 text-right">{fmt(invoiceFill.rows.reduce((t, r) => t + (Number(r.proposed) || 0), 0))}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                <div className="flex items-center gap-3 print:hidden">
-                  <button
-                    onClick={async () => {
-                      if (!confirm('Fill the invoice amount on ' + invoiceFill.rows.length + ' work order(s) as shown? You can undo this afterwards.')) return
-                      const res = await fetch('/api/admin/invoice-backfill', { method: 'POST' })
-                      const data = await res.json()
-                      if (!res.ok) alert('Something went wrong: ' + (data.error || 'unknown error'))
-                      else alert('Filled ' + data.updated + ' invoice amount(s).')
-                      load()
-                    }}
-                    className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600">
-                    Fill {invoiceFill.rows.length} invoice{invoiceFill.rows.length !== 1 ? 's' : ''}
-                  </button>
-                </div>
-              </div>
-            )}
-            {invoiceFill.backupCount > 0 && (
-              <div className="mt-3 pt-3 border-t flex items-center gap-3 flex-wrap print:hidden">
-                <span className="text-xs text-gray-500">{invoiceFill.backupCount} invoice amount{invoiceFill.backupCount !== 1 ? 's were' : ' was'} filled in earlier.</span>
-                <button
-                  onClick={async () => {
-                    if (!confirm('Undo the earlier fill? Invoices you changed since then are left alone.')) return
-                    const res = await fetch('/api/admin/invoice-backfill', { method: 'DELETE' })
-                    const data = await res.json()
-                    if (!res.ok) alert('Something went wrong: ' + (data.error || 'unknown error'))
-                    else alert('Restored ' + data.restored + ' invoice(s) to empty.')
-                    load()
-                  }}
-                  className="text-xs bg-white text-gray-700 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50">
-                  Undo last fill
-                </button>
-              </div>
-            )}
-          </Section>
-
-          <Section title="Denied Service - Diagnostic Fee Only" subtitle="Work orders where the customer declined the recommended repair but still owes a diagnostic fee for the evaluation">
-            {deniedService.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">No denied-service jobs on record</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b text-xs uppercase">
-                      <th className="pb-2 pr-3">WO#</th>
-                      <th className="pb-2 pr-3">Customer</th>
-                      <th className="pb-2 pr-3">Phone</th>
-                      <th className="pb-2 pr-3">Equipment</th>
-                      <th className="pb-2 pr-3">Technician</th>
-                      <th className="pb-2 pr-3">Date In</th>
-                      <th className="pb-2 pr-3 text-right">Fee Charged</th>
-                      <th className="pb-2 pr-3 text-right">Paid</th>
-                      <th className="pb-2 text-right">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {deniedService.map(row => {
-                      const charged = Number(row.amount_charged) || 0
-                      const paid = Number(row.amount_paid) || 0
-                      return (
-                        <tr key={String(row.id)} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-1.5 pr-3">
-                            <Link href={'/work-orders/' + row.id} className="text-blue-600 hover:underline font-mono text-xs">
-                              {String(row.order_number)}
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-3">{String(row.customer_name || '-')}</td>
-                          <td className="py-1.5 pr-3">
-                            {row.customer_phone ? (
-                              <a href={'tel:' + String(row.customer_phone).replace(/[^0-9+]/g, '')} className="text-orange-600 hover:underline text-xs">
-                                {String(row.customer_phone)}
-                              </a>
-                            ) : <span className="text-gray-400 text-xs">-</span>}
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs whitespace-nowrap">{String(row.equipment_type || '')} {String(row.make || '')} {String(row.model || '')}</td>
-                          <td className="py-1.5 pr-3">
-                            <span className={'text-xs px-2 py-0.5 rounded font-medium ' + (row.technician === 'Wade' ? 'bg-orange-100 text-orange-700' : row.technician === 'Wayne' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
-                              {String(row.technician || 'Unassigned')}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3 text-gray-500 text-xs">{fmtDate(row.date_in)}</td>
-                          <td className="py-1.5 pr-3 text-right">{charged > 0 ? fmt(charged) : <span className="text-gray-400 text-xs">not invoiced</span>}</td>
-                          <td className="py-1.5 pr-3 text-right text-green-600">{paid > 0 ? fmt(paid) : '-'}</td>
-                          <td className="py-1.5 text-right font-semibold text-orange-600">
-                            {charged > 0 ? fmt(charged - paid) : <span className="text-gray-400 text-xs">-</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 font-semibold">
-                      <td colSpan={6} className="pt-2 text-gray-600">{deniedService.length} denied-service job{deniedService.length !== 1 ? 's' : ''}</td>
-                      <td className="pt-2 text-right">{fmt(deniedService.reduce((s, r) => s + (Number(r.amount_charged) || 0), 0))}</td>
-                      <td className="pt-2 text-right text-green-600">{fmt(deniedService.reduce((s, r) => s + (Number(r.amount_paid) || 0), 0))}</td>
-                      <td className="pt-2 text-right text-orange-600">
-                        {fmt(deniedService.reduce((s, r) => s + (Number(r.amount_charged) || 0) - (Number(r.amount_paid) || 0), 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </Section>
-        </div>
+  const field = (label: string, key: keyof WorkOrder, type = 'text') => (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      {editing ? (
+        <input type={type} value={String(form[key] ?? '')}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          className="w-full border rounded px-2 py-1 text-sm" />
+      ) : (
+        <p className="text-sm text-gray-800">{String(wo[key] || '-')}</p>
       )}
     </div>
   )
-}
 
-export default function ReportsPage() {
+  const textarea = (label: string, key: keyof WorkOrder) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      {editing ? (
+        <textarea value={String(form[key] ?? '')}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          rows={3} className="w-full border rounded px-2 py-1 text-sm uppercase placeholder:normal-case" />
+      ) : (
+        <p className="text-sm text-gray-800 whitespace-pre-wrap uppercase">{String(wo[key] || '-')}</p>
+      )}
+    </div>
+  )
+
+  const partsTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
+  const laborTotal = (wo.laborHours || 0) * (wo.laborRate || 80)
+
   return (
-    <Suspense fallback={<div className="p-8 text-slate-400">Loading...</div>}>
-      <ReportsPageInner />
-    </Suspense>
+    <div className="max-w-3xl mx-auto p-4 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <button onClick={() => { if (window.history.length > 1) router.back(); else router.push('/') }}
+            className="text-sm text-orange-500 hover:underline bg-transparent border-0 p-0 cursor-pointer">
+            &larr; Back
+          </button>
+          <h1 className="text-2xl font-bold mt-1">Work Order #{wo.orderNumber}</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={'px-3 py-1 rounded-full text-xs font-semibold ' + (STATUS_COLORS[wo.status] || 'bg-gray-100 text-gray-700')}>
+            {wo.status}
+          </span>
+          <button onClick={printWorkOrder}
+            className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
+            Print Work Order
+          </button>
+          {isMobile && customer?.phone && (wo.status === 'complete' || wo.serviceDenied || ((wo.source || customer.source) === 'referral' && wo.status === 'at-shop')) && (
+            <button onClick={sendPickupReminder}
+              className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700">
+              Text Pickup Reminder
+            </button>
+          )}
+          {!wo.neverPaid && ['at-shop', 'complete', 'picked-up'].includes(wo.status) && (
+            <button onClick={() => setShowNeverPaid(true)}
+              className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-lg hover:bg-amber-200">
+              Picked Up - No Payment
+            </button>
+          )}
+          {wo.status !== 'abandoned' && wo.status !== 'donated' && wo.status !== 'picked-up' && (
+            <button onClick={() => setShowWWModal(true)}
+              className="text-xs bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg hover:bg-red-200">
+              Mark as WW Property
+            </button>
+          )}
+        </div>
+      </div>
+
+      {(wo.status === 'donated' || wo.status === 'abandoned') && (
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-purple-800">
+              This equipment already became WW Property ({wo.status === 'donated' ? 'Donated' : 'Abandoned'})
+            </p>
+            {shopEquipment ? (
+              <div className="text-sm text-purple-700 mt-1 space-y-0.5">
+                <p>Marked on {shopEquipment.acquired_date ? String(shopEquipment.acquired_date).slice(0, 10) : '-'}</p>
+                <p>
+                  Current shop status:{' '}
+                  <span className="font-medium capitalize">{shopEquipment.status.replace('-', ' ')}</span>
+                  {shopEquipment.status === 'sold' && shopEquipment.sale_price != null && (
+                    <> - sold for ${Number(shopEquipment.sale_price).toFixed(2)}{shopEquipment.sale_date ? ' on ' + String(shopEquipment.sale_date).slice(0, 10) : ''}</>
+                  )}
+                  {shopEquipment.status !== 'sold' && shopEquipment.asking_price != null && (
+                    <> - asking ${Number(shopEquipment.asking_price).toFixed(2)}</>
+                  )}
+                </p>
+                {shopEquipment.condition_notes && <p>Condition: {shopEquipment.condition_notes}</p>}
+              </div>
+            ) : (
+              <p className="text-sm text-purple-600 mt-1">No shop equipment record found for this work order - it may have been marked before this tracking existed.</p>
+            )}
+          </div>
+          <Link href="/shop-equipment" className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 whitespace-nowrap">
+            View in Shop Equipment
+          </Link>
+        </div>
+      )}
+
+      {wo.neverPaid && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-red-800">Picked Up - No Payment Recorded</p>
+            <p className="text-sm text-red-700 mt-1">
+              Marked {wo.neverPaidDate ? String(wo.neverPaidDate).slice(0, 10) : '-'}. The equipment is gone but no payment was ever recorded
+              (this may be an entry error). This job is left out of Outstanding Invoices, the Trip Report and the payout totals,
+              and is listed under Reports &gt; Financial &gt; Not Paid.
+            </p>
+            {wo.neverPaidNote && <p className="text-sm text-red-700 mt-1">Note: {wo.neverPaidNote}</p>}
+          </div>
+          <button onClick={undoNeverPaid}
+            className="text-xs bg-white text-red-700 border border-red-300 px-3 py-1.5 rounded-lg hover:bg-red-100 whitespace-nowrap">
+            Undo - payment was received / mistake
+          </button>
+        </div>
+      )}
+
+      {wo.serviceDenied && (
+        <div className="bg-pink-50 border-2 border-pink-200 rounded-xl p-4">
+          <p className="font-semibold text-pink-800">Customer Denied Service - Diagnostic Fee Only</p>
+          <p className="text-sm text-pink-700 mt-1">
+            This customer declined the recommended repair. The equipment status below still reflects where it
+            physically is (e.g. ready for pickup, at the referral shop, etc.) - this just flags that only the
+            diagnostic fee is owed, not a full repair invoice.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-gray-700 mb-2">Customer</h2>
+          {customer ? (
+            <>
+              <p className="font-medium">{customer.name}</p>
+              {customer.phone && (
+                <a href={'tel:' + customer.phone.replace(/[^0-9+]/g, '')} onClick={() => logContact('call')} className="text-sm text-orange-600 hover:underline">
+                  {customer.phone}
+                </a>
+              )}
+              {woSource === 'referral' && (
+                <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  Referral: {woReferralShop}
+                </span>
+              )}
+              <Link href={'/customers/' + customer.id} className="block text-xs text-orange-500 hover:underline mt-2">
+                View customer
+              </Link>
+            </>
+          ) : <p className="text-sm text-gray-400">Loading...</p>}
+        </div>
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-gray-700 mb-2">Equipment</h2>
+          {equipment ? (
+            <>
+              <p className="font-medium">{equipment.make} {equipment.model}</p>
+              <p className="text-sm text-gray-500">{equipment.year} {equipment.type}</p>
+              {equipment.serialNumber && <p className="text-xs text-gray-400">S/N: {equipment.serialNumber}</p>}
+            </>
+          ) : <p className="text-sm text-gray-400">Loading...</p>}
+        </div>
+      </div>
+
+      {contactLog.length > 0 && (
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-gray-700 mb-2 text-sm">Contact History</h2>
+          <div className="space-y-1">
+            {contactLog.slice(0, 5).map(c => (
+              <div key={c.id} className="flex items-center gap-2 text-xs text-gray-500">
+                <span className={'px-1.5 py-0.5 rounded font-medium ' + (c.type === 'call' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')}>
+                  {c.type === 'call' ? 'Called' : 'Texted'}
+                </span>
+                <span>{new Date(c.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">Work Details</h2>
+          {editing ? (
+            <div className="flex gap-2">
+              <button onClick={() => { setEditing(false); setForm(wo) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={saveWorkOrder} disabled={saving} className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)} className="text-sm text-orange-500 hover:underline">Edit</button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+            {editing ? (
+              <select value={form.status || ''} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm">
+                {['pending','in-progress','waiting-parts','complete','at-shop','picked-up','abandoned','donated'].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            ) : <p className="text-sm text-gray-800 capitalize">{wo.status}</p>}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Service Denied?</label>
+            {editing ? (
+              <label className="flex items-center gap-2 h-[30px] text-sm">
+                <input type="checkbox" checked={!!form.serviceDenied}
+                  onChange={e => setForm(f => ({ ...f, serviceDenied: e.target.checked }))}
+                  className="w-4 h-4 accent-pink-600" />
+                <span>Customer declined repair - diagnostic fee only</span>
+              </label>
+            ) : wo.serviceDenied ? (
+              <span className="inline-block text-xs px-2 py-0.5 rounded-full font-medium bg-pink-100 text-pink-800">
+                Denied Service - Diagnostic Fee Only
+              </span>
+            ) : <p className="text-sm text-gray-400">-</p>}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Technician</label>
+            {editing ? (
+              <select value={form.technician || ''} onChange={e => setForm(f => ({ ...f, technician: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm">
+                <option value="">-</option>
+                <option value="Wade">Wade</option>
+                <option value="Wayne">Wayne</option>
+                <option value="Both">Both</option>
+              </select>
+            ) : <p className="text-sm text-gray-800">{wo.technician || '-'}</p>}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Job Type (this work order)</label>
+            {editing ? (
+              <select value={form.source || woSource || 'own'} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
+                className="w-full border rounded px-2 py-1 text-sm">
+                <option value="own">Direct Customer</option>
+                <option value="referral">Referral</option>
+              </select>
+            ) : (
+              <p className="text-sm text-gray-800">{woSource === 'referral' ? 'Referral' : 'Direct Customer'}</p>
+            )}
+          </div>
+          {(editing ? form.source : woSource) === 'referral' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Referral Shop (this work order)</label>
+              {editing ? (
+                <select value={form.referralShop || ''} onChange={e => setForm(f => ({ ...f, referralShop: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm">
+                  <option value="">Select shop...</option>
+                  {referralShops.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-800">{woReferralShop || '-'}</p>
+              )}
+            </div>
+          )}
+        </div>
+        <p className="text-[11px] text-gray-400">Overrides this specific work order only - does not change the customer's default classification.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {field('Date In', 'dateIn', 'date')}
+          {field('Date Complete', 'dateComplete', 'date')}
+          {field('Date Picked Up', 'datePickedUp', 'date')}
+        </div>
+        {textarea('Complaint / Problem Reported', 'complaint')}
+        {textarea('Diagnosis', 'diagnosis')}
+        {textarea('Work Done', 'workDone')}
+        {field('Labor Hours', 'laborHours', 'number')}
+        {textarea('Notes', 'notes')}
+        {editing && (
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <button onClick={() => { setEditing(false); setForm(wo) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+            <button onClick={saveWorkOrder} disabled={saving} className="text-sm bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-gray-700">Parts</h2>
+          <div className="flex gap-2">
+            <button onClick={() => { setShowCatalog(v => !v); setShowAddPart(false) }}
+              className="text-sm bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600">
+              Pick from Catalog
+            </button>
+            <button onClick={() => { setShowAddPart(v => !v); setShowCatalog(false); setSelectedSavedPartId(null) }}
+              className="text-sm bg-orange-500 text-white px-3 py-2 rounded-lg hover:bg-orange-600">
+              + Add Part
+            </button>
+          </div>
+        </div>
+
+        {showCatalog && (
+          <div className="border rounded-lg p-3 mb-4 bg-blue-50">
+            <input
+              autoFocus
+              placeholder="Search catalog by name, part number or supplier..."
+              value={catalogSearch}
+              onChange={e => setCatalogSearch(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-sm mb-2"
+            />
+            {catalogSearch.length === 0 ? (
+              <p className="text-xs text-gray-400">Start typing to search saved parts</p>
+            ) : (() => {
+              const q = catalogSearch.toLowerCase()
+              const matches = catalog.filter(s =>
+                s.name.toLowerCase().includes(q) ||
+                s.partNumber.toLowerCase().includes(q) ||
+                s.supplier.toLowerCase().includes(q)
+              )
+              return matches.length === 0 ? (
+                <p className="text-xs text-gray-400">No matches found</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {matches.map(s => {
+                    const qty = Number(s.quantityOnHand) || 0
+                    return (
+                      <button key={s.id} onClick={() => { loadFromCatalog(s); setCatalogSearch('') }}
+                        className="w-full text-left px-3 py-2 bg-white rounded border hover:bg-blue-100 text-sm flex items-center justify-between gap-2">
+                        <span>
+                          <span className="font-medium">{s.name}</span>
+                          {s.partNumber && <span className="text-gray-400 ml-2">#{s.partNumber}</span>}
+                          {s.supplier && <span className="text-gray-400 ml-2">- {s.supplier}</span>}
+                          {Number(s.price) > 0 && <span className="text-gray-500 ml-2">${Number(s.price).toFixed(2)}</span>}
+                        </span>
+                        <span className={'text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ' + (qty === 0 ? 'bg-red-100 text-red-700' : qty <= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700')}>
+                          {qty} in stock
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
+
+        {showAddPart && (
+          <div className="border rounded-lg p-3 mb-4 bg-orange-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">New Part</p>
+              <div className="flex rounded-lg overflow-hidden border text-xs font-medium">
+                <button onClick={() => setNewPart(p => ({ ...p, fromShop: false }))}
+                  className={'px-3 py-1 ' + (!newPart.fromShop ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+                  On Order
+                </button>
+                <button onClick={() => setNewPart(p => ({ ...p, fromShop: true }))}
+                  className={'px-3 py-1 ' + (newPart.fromShop ? 'bg-green-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+                  From Shop
+                </button>
+              </div>
+            </div>
+            {newPart.fromShop && (
+              <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
+                Part is in stock - will be marked as received immediately.
+              </p>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-500">Part Name *</label>
+                <input value={newPart.name} onChange={e => setNewPart(p => ({ ...p, name: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="Air filter" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Part Number</label>
+                <input value={newPart.partNumber} onChange={e => setNewPart(p => ({ ...p, partNumber: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="ABC-123" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Supplier</label>
+                <input value={newPart.supplier} onChange={e => setNewPart(p => ({ ...p, supplier: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="NAPA, dealer..." />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Qty</label>
+                <input type="number" value={newPart.quantity} onChange={e => setNewPart(p => ({ ...p, quantity: Number(e.target.value) }))}
+                  className="w-full border rounded px-2 py-1 text-sm" min="1" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Our Cost ($)</label>
+                <input type="number" value={newPart.cost} onChange={e => {
+                    const costVal = e.target.value
+                    const auto = costVal ? (Math.ceil((Number(costVal) * 1.5) / 5) * 5).toFixed(2) : ''
+                    setNewPart(p => ({ ...p, cost: costVal, price: auto }))
+                  }}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Charge Customer ($)</label>
+                <input type="number" value={newPart.price} onChange={e => setNewPart(p => ({ ...p, price: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" placeholder="0.00" step="0.01" />
+                <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled at 1.5x cost, rounded up to the nearest $5, editable</p>
+              </div>
+              {!newPart.fromShop && (
+                <div>
+                  <label className="text-xs text-gray-500">Date Ordered</label>
+                  <input type="date" value={newPart.dateOrdered} onChange={e => setNewPart(p => ({ ...p, dateOrdered: e.target.value }))}
+                    className="w-full border rounded px-2 py-1 text-sm" />
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={addPart} disabled={!newPart.name}
+                className={'text-sm px-4 py-1 rounded-lg disabled:opacity-50 text-white ' + (newPart.fromShop ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-500 hover:bg-orange-600')}>
+                {newPart.fromShop ? 'Add from Stock' : 'Add Part'}
+              </button>
+              <button onClick={() => { setShowAddPart(false); setSelectedSavedPartId(null) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {parts.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">No parts added yet</p>
+        ) : (
+          <div className="space-y-2">
+            {parts.map(part => (
+              <div key={part.id} className={'border rounded-lg p-3 ' + (part.status === 'received' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200')}>
+                {editingPart === part.id ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-500">Part Name</label>
+                        <input value={partForm.name || ''} onChange={e => setPartForm(f => ({ ...f, name: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Part Number</label>
+                        <input value={partForm.partNumber || ''} onChange={e => setPartForm(f => ({ ...f, partNumber: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Supplier</label>
+                        <input value={partForm.supplier || ''} onChange={e => setPartForm(f => ({ ...f, supplier: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Qty</label>
+                        <input type="number" value={partForm.quantity || 1} onChange={e => setPartForm(f => ({ ...f, quantity: Number(e.target.value) }))}
+                          className="w-full border rounded px-2 py-1 text-sm" min="1" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Our Cost ($)</label>
+                        <input type="number" value={partForm.cost || ''} onChange={e => {
+                            const costVal = e.target.value
+                            const auto = costVal ? Math.ceil((Number(costVal) * 1.5) / 5) * 5 : 0
+                            setPartForm(f => ({ ...f, cost: Number(costVal), price: auto }))
+                          }}
+                          className="w-full border rounded px-2 py-1 text-sm" step="0.01" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Charge Customer ($)</label>
+                        <input type="number" value={partForm.price || ''} onChange={e => setPartForm(f => ({ ...f, price: Number(e.target.value) }))}
+                          className="w-full border rounded px-2 py-1 text-sm" step="0.01" />
+                        <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled at 1.5x cost, rounded up to the nearest $5, editable</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={updatePart}
+                        className="text-xs bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600">
+                        Save
+                      </button>
+                      <button onClick={() => { setEditingPart(null); setPartForm({}) }}
+                        className="text-xs text-gray-500 hover:text-gray-700">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{part.name}</span>
+                        {part.partNumber && <span className="text-xs text-gray-400">#{part.partNumber}</span>}
+                        <span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (part.status === 'received' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')}>
+                          {part.status === 'received' ? 'Received' : 'Ordered'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
+                        {part.supplier && <span>Supplier: {part.supplier}</span>}
+                        <span>Qty: {part.quantity}</span>
+                        {Number(part.cost) > 0 && <span>Cost: ${Number(part.cost).toFixed(2)}</span>}
+                        {Number(part.price) > 0 && <span className="font-medium text-gray-700">Charge: ${(Number(part.price) * Number(part.quantity)).toFixed(2)}</span>}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 flex gap-3">
+                        {part.dateOrdered && <span>Ordered: {part.dateOrdered}</span>}
+                        {part.status === 'received' && part.dateReceived && <span>Received: {part.dateReceived}</span>}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 ml-2 shrink-0">
+                      <button onClick={() => { setEditingPart(part.id); setPartForm(part) }}
+                        className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200">
+                        Edit
+                      </button>
+                      <button onClick={() => saveToCatalog(part)}
+                        className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">
+                        Save to Catalog
+                      </button>
+                      {part.status !== 'received' && (
+                        <button onClick={() => markReceived(part.id)}
+                          className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
+                          Mark Received
+                        </button>
+                      )}
+                      <button onClick={() => deletePart(part.id)}
+                        className="text-xs text-red-400 hover:text-red-600 text-center">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">Financials</h2>
+          {editing ? (
+            <div className="flex gap-2">
+              <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={saveWorkOrder} disabled={saving} className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded hover:bg-orange-600">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)} className="text-xs text-orange-500 hover:underline">Edit</button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {field('Labor Hours', 'laborHours', 'number')}
+          {field('Labor Rate ($/hr)', 'laborRate', 'number')}
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Labor ({wo.laborHours}h x ${wo.laborRate}/hr)</span>
+            <span>${laborTotal.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Parts ({parts.length} item{parts.length !== 1 ? 's' : ''})</span>
+            <span>${partsTotal.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+            <span>Estimated Total (labor + parts)</span>
+            <span>${(laborTotal + partsTotal).toFixed(2)}</span>
+          </div>
+        </div>
+        {(() => {
+          const estimate = laborTotal + partsTotal
+          const savedInvoice = Number(wo.amountCharged) || 0
+          const invoice = savedInvoice > 0 ? savedInvoice : estimate
+          const paid = Number(wo.amountPaid) || 0
+          const isRefWO = woSource === 'referral'
+          const noCharge = wo.paymentMethod === 'no charge'
+          const estimateDiffers = savedInvoice > 0 && Math.abs(savedInvoice - estimate) > 0.005
+          const payState = noCharge ? 'nocharge'
+            : paid > 0 && (invoice <= 0 || paid >= invoice - 0.005) ? 'paid'
+            : paid > 0 ? 'partial' : 'unpaid'
+          const balance = Math.max(invoice - paid, 0)
+          const payBox = payState === 'paid' ? 'border-green-300 bg-green-50'
+            : payState === 'partial' ? 'border-yellow-300 bg-yellow-50'
+            : payState === 'unpaid' && invoice > 0 ? 'border-orange-300 bg-orange-50'
+            : 'border-gray-200 bg-gray-50'
+          return (
+            <>
+              {/* Invoice - what we are charging (same for direct and referral jobs) */}
+              <div className="rounded-lg border-2 border-gray-200 bg-gray-50 p-4 mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">Invoice</h3>
+                  {savedInvoice > 0
+                    ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">INVOICED</span>
+                    : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">NOT INVOICED YET</span>}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Total ($)</label>
+                    {editing ? (
+                      <div className="space-y-1">
+                        <input type="number" step="0.01" value={String(form.amountCharged ?? '')}
+                          onChange={e => setForm(f => ({ ...f, amountCharged: e.target.value as unknown as number }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                        <button type="button" onClick={() => setForm(f => ({ ...f, amountCharged: Number(estimate.toFixed(2)) }))}
+                          className="text-xs text-orange-600 hover:underline">
+                          Use estimate (${estimate.toFixed(2)})
+                        </button>
+                      </div>
+                    ) : savedInvoice > 0 ? (
+                      <p className="text-sm text-gray-800 font-medium">${savedInvoice.toFixed(2)}</p>
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">est. ${estimate.toFixed(2)}</p>
+                    )}
+                  </div>
+                </div>
+                {!editing && savedInvoice === 0 && estimate > 0 && !noCharge && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    The invoice fills in from the estimate automatically when the job is marked complete{isRefWO ? ' (returned to the shop)' : ''}.{' '}
+                    <button onClick={setInvoiceToEstimate} className="text-orange-600 underline">Set it now</button>
+                  </p>
+                )}
+                {!editing && estimateDiffers && !noCharge && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    Estimate is now ${estimate.toFixed(2)}, but the invoice says ${savedInvoice.toFixed(2)}.{' '}
+                    <button onClick={setInvoiceToEstimate} className="text-orange-600 underline">Update invoice</button>
+                  </p>
+                )}
+              </div>
+
+              {/* Payment - what we actually received */}
+              {isRefWO ? (
+                <div className={'rounded-lg border-2 p-4 ' + (wo.shopPaymentReceived ? 'border-green-300 bg-green-50' : 'border-blue-200 bg-blue-50')}>
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-semibold text-gray-700">Payment</h3>
+                    {wo.shopPaymentReceived
+                      ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">SHOP PAID</span>
+                      : wo.referralDropoffDate
+                      ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">AWAITING SHOP PAYMENT</span>
+                      : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">NOT RETURNED YET</span>}
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    The referral shop pays us for this job. Record it in the Referral Shop Tracking box below
+                    {wo.shopPaymentReceived && wo.shopPaymentAmount ? ' - received $' + Number(wo.shopPaymentAmount).toFixed(2) + (wo.shopPaymentDate ? ' on ' + String(wo.shopPaymentDate).slice(0, 10) : '') : ''}.
+                  </p>
+                  {editing && (
+                    <label className="flex items-center gap-2 text-xs text-gray-600 mt-2">
+                      <input type="checkbox" checked={form.paymentMethod === 'no charge'}
+                        onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.checked ? 'no charge' : '' }))}
+                        className="w-4 h-4" />
+                      <span>No charge (done for free)</span>
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <div className={'rounded-lg border-2 p-4 ' + payBox}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">Payment</h3>
+                    {payState === 'paid' ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">PAID IN FULL</span>
+                    ) : payState === 'partial' ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">PARTIAL PAYMENT</span>
+                    ) : payState === 'nocharge' ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">NO CHARGE</span>
+                    ) : (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">UNPAID</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Payment Method</label>
+                      {editing ? (
+                        <select value={form.paymentMethod || ''} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm">
+                          {[
+                            { value: '', label: '-' },
+                            { value: 'cash', label: 'Cash' },
+                            { value: 'check', label: 'Check' },
+                            { value: 'card', label: 'Card' },
+                            { value: 'other', label: 'Other' },
+                            { value: 'no charge', label: 'No Charge' },
+                          ].map(m => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      ) : <p className="text-sm text-gray-800 capitalize">{wo.paymentMethod || '-'}</p>}
+                    </div>
+                    {field('Amount Paid ($)', 'amountPaid', 'number')}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Date Paid</label>
+                      {editing ? (
+                        <input type="date" value={form.paymentDate || ''} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))}
+                          className="w-full border rounded px-2 py-1 text-sm" />
+                      ) : <p className="text-sm text-gray-800">{wo.paymentDate ? String(wo.paymentDate).slice(0, 10) : '-'}</p>}
+                    </div>
+                  </div>
+                  {!noCharge && invoice > 0 && balance > 0.004 && (
+                    <div className="mt-3 pt-3 border-t border-dashed border-gray-300 flex justify-between items-center flex-wrap gap-2">
+                      <div>
+                        <span className="text-sm font-medium text-orange-700">Balance Due </span>
+                        <span className="text-lg font-bold text-orange-700">${balance.toFixed(2)}</span>
+                      </div>
+                      {!editing && (
+                        <button onClick={() => openPayment('customer')}
+                          className="text-sm bg-orange-500 text-white px-4 py-1.5 rounded-lg hover:bg-orange-600 font-medium">
+                          Record Payment
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )
+        })()}
+        {editing && (
+          <div className="flex gap-2">
+            <button onClick={() => { setEditing(false); setForm(wo) }}
+              className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-lg hover:bg-gray-200 font-medium">
+              Cancel
+            </button>
+            <button onClick={saveWorkOrder} disabled={saving}
+              className="flex-[2] bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 font-medium">
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        )}
+      </div>
+
+
+
+      {/* Referral Shop Tracking - only shown for referral customers */}
+      {woSource === 'referral' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl shadow p-4 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold text-blue-800">Referral Shop Tracking</h2>
+              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{woReferralShop || 'Referral Shop'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {wo.referralDropoffDate && (
+                <button onClick={printReceipt}
+                  className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
+                  Print Shop Receipt
+                </button>
+              )}
+              {editing ? (
+                <div className="flex gap-2">
+                  <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                  <button onClick={saveWorkOrder} disabled={saving} className="text-xs bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600">
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setEditing(true)} className="text-xs text-orange-500 hover:underline">Edit</button>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Picked Up From Shop</label>
+              {editing ? (
+                <input type="date" value={form.referralPickupDate || ''} onChange={e => setForm(f => ({ ...f, referralPickupDate: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.referralPickupDate ? String(wo.referralPickupDate).slice(0, 10) : '-'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Returned to Shop</label>
+              {editing ? (
+                <input type="date" value={form.referralDropoffDate || ''} onChange={e => setForm(f => ({ ...f, referralDropoffDate: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.referralDropoffDate ? String(wo.referralDropoffDate).slice(0, 10) : '-'}</p>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Payment Received From Shop ($)</label>
+              {editing ? (
+                <input type="number" step="0.01" value={form.shopPaymentAmount || ''} onChange={e => setForm(f => ({ ...f, shopPaymentAmount: Number(e.target.value) }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.shopPaymentAmount ? '$' + Number(wo.shopPaymentAmount).toFixed(2) : '-'}</p>}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Shop Payment Date</label>
+              {editing ? (
+                <input type="date" value={form.shopPaymentDate || ''} onChange={e => setForm(f => ({ ...f, shopPaymentDate: e.target.value }))}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              ) : <p className="text-sm text-gray-800">{wo.shopPaymentDate ? String(wo.shopPaymentDate).slice(0, 10) : '-'}</p>}
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Payment Received</label>
+              {editing ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={!!form.shopPaymentReceived} onChange={e => setForm(f => ({ ...f, shopPaymentReceived: e.target.checked }))}
+                    className="w-4 h-4" />
+                  <span>Received</span>
+                </label>
+              ) : (
+                <span className={'text-sm font-medium ' + (wo.shopPaymentReceived ? 'text-green-600' : 'text-orange-500')}>
+                  {wo.shopPaymentReceived ? 'Received' : 'Pending'}
+                </span>
+              )}
+            </div>
+          </div>
+          {!editing && wo.referralDropoffDate && !wo.shopPaymentReceived && (
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs text-orange-600 font-medium">Payment outstanding - equipment returned to shop</p>
+              <button onClick={() => openPayment('shop')}
+                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium">
+                Record Shop Payment
+              </button>
+            </div>
+          )}
+
+          {/* Commission to Shop */}
+          {wo.shopPaymentReceived && (
+            <div className={'mt-3 pt-3 border-t-2 border-dashed ' + (wo.commissionPaid ? 'border-green-300' : 'border-orange-300')}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">20% Commission to Shop</h3>
+                {wo.commissionPaid
+                  ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">PAID</span>
+                  : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">OWED</span>
+                }
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Commission Owed</label>
+                  <p className="text-sm font-medium text-orange-700">
+                    {(() => {
+                      const partsCharged = parts.reduce((s, p) => s + Number(p.price) * Number(p.quantity), 0)
+                      const shopAmt = Number(wo.shopPaymentAmount) || 0
+                      const net = shopAmt > 0 ? shopAmt - partsCharged : 0
+                      return '$' + (net * 0.20).toFixed(2)
+                    })()}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Date Paid to Shop</label>
+                  {editing ? (
+                    <input type="date" value={form.commissionPaidDate || ''}
+                      onChange={e => setForm(f => ({ ...f, commissionPaidDate: e.target.value }))}
+                      className="w-full border rounded px-2 py-1 text-sm" />
+                  ) : (
+                    <p className="text-sm text-gray-800">{wo.commissionPaidDate ? String(wo.commissionPaidDate).slice(0,10) : '-'}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Mark as Paid</label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={!!form.commissionPaid}
+                      onChange={e => setForm(f => ({ ...f, commissionPaid: e.target.checked }))}
+                      disabled={!editing} className="w-4 h-4 accent-green-600" />
+                    <span className={form.commissionPaid ? 'text-green-600 font-medium text-sm' : 'text-gray-400 text-sm'}>
+                      {form.commissionPaid ? 'Paid' : 'Not yet paid'}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {editing && (
+            <div className="flex justify-end gap-2 pt-2 border-t border-blue-200">
+              <button onClick={() => { setEditing(false); setForm(wo) }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={saveWorkOrder} disabled={saving} className="text-xs bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Payout Summary - Internal Only */}
+      <div className="bg-white rounded-xl shadow p-4 space-y-3 border-2 border-dashed border-gray-200">
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold text-gray-700">Payout Summary</h2>
+          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Internal Only</span>
+        </div>
+        {(() => {
+          const laborTotal = (Number(wo.laborHours) || 0) * (Number(wo.laborRate) || 80)
+          const partsChargeTotal = parts.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0)
+          const estimatedTotal = laborTotal + partsChargeTotal
+          const invoice = Number(wo.amountCharged) > 0 ? Number(wo.amountCharged) : estimatedTotal
+          const partsOurCost = parts.reduce((sum, p) => sum + (Number(p.cost) * Number(p.quantity)), 0)
+          const isReferral = woSource === 'referral'
+          const afterParts = invoice - partsChargeTotal
+          const referralCut = isReferral ? afterParts * 0.20 : 0
+          const netEarned = afterParts - referralCut
+          // Payout method changed for anything paid after 2026-07-01: jobs paid on or
+          // before that date still split 60/40 (matching how they were actually paid out);
+          // jobs paid after that date pay 100% to whoever is assigned (50/50 if Both).
+          // Referral jobs have an actual shop payment date; in-house jobs don't track a
+          // separate paid date, so we use the completion date as the best available stand-in.
+          const paidDate = wo.paymentDate || wo.shopPaymentDate || wo.dateComplete || wo.referralDropoffDate || wo.dateIn || ''
+          const useOldSplit = paidDate && String(paidDate).slice(0, 10) <= '2026-07-01'
+          const wadePayout = netEarned * 0.60
+          const waynePayout = netEarned * 0.40
+          return (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">
+                  Invoice Total
+                  {Number(wo.amountCharged) === 0 && <span className="ml-1 text-xs text-gray-400">(estimated)</span>}
+                </span>
+                <span className="font-medium">${invoice.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>Parts Charged to Customer</span>
+                <span>-${partsChargeTotal.toFixed(2)}</span>
+              </div>
+              {isReferral && (
+                <div className="flex justify-between text-red-600">
+                  <span>Referral Shop Cut (20% of net) - {woReferralShop || 'Other Shop'}</span>
+                  <span>-${referralCut.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-semibold border-t pt-2">
+                <span>Net Earned</span>
+                <span>${netEarned.toFixed(2)}</span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                {useOldSplit ? (
+                  <>
+                    <div className="flex justify-between text-orange-700">
+                      <span>Wade (60%)</span>
+                      <span className="font-semibold">${wadePayout.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Wayne (40%)</span>
+                      <span className="font-semibold">${waynePayout.toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : wo.technician === 'Both' ? (
+                  <>
+                    <div className="flex justify-between text-orange-700">
+                      <span>Wade (50% - Both assigned)</span>
+                      <span className="font-semibold">${(netEarned * 0.5).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Wayne (50% - Both assigned)</span>
+                      <span className="font-semibold">${(netEarned * 0.5).toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : wo.technician === 'Wayne' ? (
+                  <div className="flex justify-between font-semibold text-blue-700">
+                    <span>Wayne (100%)</span>
+                    <span>${netEarned.toFixed(2)}</span>
+                  </div>
+                ) : wo.technician === 'Wade' ? (
+                  <div className="flex justify-between font-semibold text-orange-700">
+                    <span>Wade (100%)</span>
+                    <span>${netEarned.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between font-semibold text-gray-700">
+                    <span>Goes to: Unassigned</span>
+                    <span>${netEarned.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+              {estimatedTotal === 0 && invoice === 0 && (
+                <p className="text-xs text-gray-400 italic">Using the Estimated Total. Enter an Invoice Total to override.</p>
+              )}
+            </div>
+          )
+        })()}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-gray-800">Photos</h2>
+          <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1">
+            {photoUploading ? 'Uploading...' : '+ Add Photo'}
+            <input type="file" accept="image/*" className="hidden" disabled={photoUploading} onChange={async e => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              setPhotoUploading(true)
+              setPhotoError('')
+              const fd = new FormData()
+              fd.append('file', file)
+              try {
+                const res = await fetch('/api/work-orders/' + id + '/photos', { method: 'POST', body: fd })
+                const data = await res.json()
+                if (res.ok) setPhotos(prev => [...prev, data])
+                else setPhotoError(data.error || 'Upload failed')
+              } catch { setPhotoError('Upload failed') }
+              setPhotoUploading(false)
+              e.target.value = ''
+            }} />
+          </label>
+        </div>
+        {photoError && <p className="text-xs text-red-500 mb-2">{photoError}</p>}
+        {photos.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No photos yet</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {photos.map(photo => (
+              <div key={photo.id} className="relative group">
+                <a href={photo.url} target="_blank" rel="noreferrer">
+                  <img src={photo.url} alt="Work order photo" className="w-full h-28 object-cover rounded-lg border" />
+                </a>
+                <button onClick={async () => {
+                  if (!confirm('Delete this photo?')) return
+                  const res = await fetch('/api/work-orders/' + id + '/photos', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({photoId: photo.id}) })
+                  if (res.ok) setPhotos(prev => prev.filter(p => p.id !== photo.id))
+                }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs hidden group-hover:flex items-center justify-center">x</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-center pb-4">
+        <button onClick={deleteWorkOrder} className="text-xs text-red-400 hover:text-red-600">
+          Delete this work order
+        </button>
+      </div>
+
+      {showPay && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">
+              {showPay === 'shop' ? 'Record Payment From Shop' : 'Record Customer Payment'}
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Invoice total ${invoiceNow().toFixed(2)}
+              {showPay === 'customer' && Number(wo.amountPaid) > 0 ? ' - already paid $' + Number(wo.amountPaid).toFixed(2) : ''}
+            </p>
+            {showPay === 'customer' && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-gray-500 block mb-1">How did they pay?</label>
+                <select value={payMethod} onChange={e => setPayMethod(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm">
+                  <option value="">Choose...</option>
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="card">Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            )}
+            <div className="mb-3">
+              <label className="text-xs font-medium text-gray-500 block mb-1">
+                {showPay === 'shop' ? 'Amount received from shop ($)' : 'Amount received now ($)'}
+              </label>
+              <input type="number" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Date received</label>
+              <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={recordPayment} className="flex-1 bg-green-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-green-700">
+                Save Payment
+              </button>
+              <button onClick={() => setShowPay(null)} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNeverPaid && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Picked Up - No Payment Recorded</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Use this when the equipment is no longer here (the customer picked it up, or it went back to the referral shop)
+              but no payment was ever recorded - it may just be an entry error. If the equipment is still in the shop,
+              don't use this: after about 60 days use <strong>Mark as WW Property</strong> and choose Abandoned instead.
+            </p>
+            <div className="mb-3">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Date</label>
+              <input type="date" value={npDate} onChange={e => setNpDate(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Note (optional)</label>
+              <input value={npNote} onChange={e => setNpNote(e.target.value)} placeholder="e.g. not in shop at Thursday check; shop never paid" className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={markNeverPaid} className="flex-1 bg-amber-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-amber-700">
+                Confirm
+              </button>
+              <button onClick={() => setShowNeverPaid(false)} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWWModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Mark as WW Property</h2>
+            <p className="text-sm text-gray-500 mb-4">This will close the work order and add the equipment to the Shop Equipment list.</p>
+            <div className="mb-3">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Reason</label>
+              <select value={wwAcqType} onChange={e => setWwAcqType(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm">
+                <option value="abandoned">Abandoned - customer never picked up / never paid</option>
+                <option value="donated">Donated - customer gave it to WW</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 block mb-1">Condition Notes (optional)</label>
+              <input value={wwNotes} onChange={e => setWwNotes(e.target.value)} placeholder="Brief condition description" className="w-full border rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={markAsWWProperty} className="flex-1 bg-red-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-red-700">
+                Confirm
+              </button>
+              <button onClick={() => setShowWWModal(false)} className="flex-1 border rounded-lg py-2 text-sm font-medium hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
