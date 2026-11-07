@@ -68,6 +68,7 @@ export function toWorkOrder(r: Record<string, unknown>) {
     datePickedUp: r.date_picked_up,
     notes: r.notes,
     paymentMethod: r.payment_method,
+    paymentDate: r.payment_date,
     amountCharged: r.amount_charged,
     amountPaid: r.amount_paid,
     referralPickupDate: r.referral_pickup_date,

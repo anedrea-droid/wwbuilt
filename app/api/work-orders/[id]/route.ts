@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server'
 import { getPool, toWorkOrder } from '@/lib/db'
 
+// Estimate = labor (hours x rate) + parts charged to the customer. Used to fill an empty invoice.
+const ESTIMATE_FILL_SQL =
+  'UPDATE work_orders wo SET amount_charged = est.total FROM (' +
+  'SELECT w.id, ROUND((COALESCE(w.labor_hours, 0) * COALESCE(w.labor_rate, 80) + ' +
+  'COALESCE((SELECT SUM(p.price * p.quantity) FROM parts p WHERE p.work_order_id = w.id), 0))::numeric, 2) AS total ' +
+  'FROM work_orders w WHERE w.id = $1) est ' +
+  'WHERE wo.id = est.id AND est.total > 0 AND (wo.amount_charged IS NULL OR wo.amount_charged = 0)'
+
+const TODAY_CT = "(NOW() AT TIME ZONE 'America/Chicago')::date"
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -24,6 +34,8 @@ export async function PATCH(
   const pool = getPool()
   try {
     const body = await req.json()
+    const { rows: beforeRows } = await pool.query('SELECT * FROM work_orders WHERE id = $1', [id])
+    const before = (beforeRows[0] || {}) as Record<string, unknown>
     const fields: string[] = []
     const values: unknown[] = []
     let idx = 1
@@ -35,9 +47,9 @@ export async function PATCH(
       'shop_payment_amount', 'shop_payment_date', 'shop_payment_received',
       'commission_paid', 'commission_paid_date',
       'source', 'referral_shop', 'service_denied',
-      'never_paid', 'never_paid_date', 'never_paid_note',
+      'never_paid', 'never_paid_date', 'never_paid_note', 'payment_date',
     ]
-    const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date','commission_paid_date','never_paid_date']
+    const dateFields = ['date_in','date_complete','date_picked_up','referral_pickup_date','referral_dropoff_date','shop_payment_date','commission_paid_date','never_paid_date','payment_date']
     const numericFields = ['labor_hours','labor_rate','amount_charged','amount_paid','shop_payment_amount']
     for (const key of allowed) {
       if (body[key] !== undefined) {
@@ -76,6 +88,44 @@ export async function PATCH(
         "UPDATE work_orders SET status = 'complete' WHERE id = $1 AND status NOT IN ('at-shop', 'picked-up')",
         [id]
       )
+    }
+
+    // ---- Invoice + payment smoothing ------------------------------------------
+    const { rows: afterRows } = await pool.query('SELECT * FROM work_orders WHERE id = $1', [id])
+    const after = (afterRows[0] || {}) as Record<string, unknown>
+    const has = (v: unknown) => v !== null && v !== undefined && String(v) !== ''
+    const isDone = (r: Record<string, unknown>) =>
+      ['complete', 'at-shop', 'picked-up'].includes(String(r.status)) || has(r.date_complete) || has(r.referral_dropoff_date)
+
+    // 1) The moment a job becomes done (marked complete, or returned to the referral shop),
+    //    fill an empty invoice from the estimate so reports and receipts always have a number.
+    if (!isDone(before) && isDone(after)
+        && !(Number(after.amount_charged) > 0)
+        && after.payment_method !== 'no charge'
+        && !after.service_denied
+        && !['donated', 'abandoned'].includes(String(after.status))) {
+      await pool.query(ESTIMATE_FILL_SQL, [id])
+    }
+
+    // 2) Shop payment marked received: default the amount to the invoice and the date to today.
+    if (body.shop_payment_received === true || body.shop_payment_received === 'true') {
+      await pool.query(
+        'UPDATE work_orders SET shop_payment_amount = amount_charged WHERE id = $1 AND (shop_payment_amount IS NULL OR shop_payment_amount = 0) AND amount_charged > 0',
+        [id]
+      )
+      await pool.query(
+        'UPDATE work_orders SET shop_payment_date = ' + TODAY_CT + ' WHERE id = $1 AND (shop_payment_date IS NULL OR shop_payment_date::text = \'\')',
+        [id]
+      )
+    }
+
+    // 3) Customer payment entered: stamp the date paid if none was given; clear it if the payment is removed.
+    const paidNow = Number(after.amount_paid) || 0
+    const paidBefore = Number(before.amount_paid) || 0
+    if (paidNow > paidBefore && !has(after.payment_date)) {
+      await pool.query('UPDATE work_orders SET payment_date = ' + TODAY_CT + ' WHERE id = $1', [id])
+    } else if (paidNow === 0 && has(after.payment_date)) {
+      await pool.query('UPDATE work_orders SET payment_date = NULL WHERE id = $1', [id])
     }
 
     // Auto-fill standard fields from referral equivalents so reports and
