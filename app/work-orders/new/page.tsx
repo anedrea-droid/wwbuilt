@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, Suspense } from "react"
+import { resolveMake, sortMakes } from '@/lib/equipment-makes'
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Plus, User, Wrench } from "lucide-react"
@@ -48,6 +49,7 @@ function NewWorkOrderForm() {
   const [newEquipTypeOther, setNewEquipTypeOther] = useState('')
   const [newEquipMake, setNewEquipMake] = useState('')
   const [newEquipMakeOther, setNewEquipMakeOther] = useState('')
+  const [addMakeToList, setAddMakeToList] = useState(true)
   const [newEquipModel, setNewEquipModel] = useState('')
   const [newEquipSerial, setNewEquipSerial] = useState('')
   const [equipMakes, setEquipMakes] = useState<{id:string;name:string}[]>([])
@@ -134,16 +136,22 @@ function NewWorkOrderForm() {
 
   async function handleSaveEquipment() {
     if (!newEquipMake.trim() || !selectedCustomerId) return
+    let finalMake = newEquipMake
+    if (newEquipMake === 'Other') {
+      const r = await resolveMake(newEquipMakeOther, equipMakes, addMakeToList)
+      finalMake = r.name
+      if (r.added) setEquipMakes(prev => sortMakes([...prev, r.added!]))
+    }
     const res = await fetch('/api/equipment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: selectedCustomerId, type: newEquipType === 'Other' ? (newEquipTypeOther.trim() || 'Other') : newEquipType, make: newEquipMake === 'Other' ? (newEquipMakeOther.trim() || 'Other') : newEquipMake, model: newEquipModel, serialNumber: newEquipSerial })
+      body: JSON.stringify({ customerId: selectedCustomerId, type: newEquipType === 'Other' ? (newEquipTypeOther.trim() || 'Other') : newEquipType, make: finalMake, model: newEquipModel, serialNumber: newEquipSerial })
     })
     const e = await res.json()
     setEquipment(prev => [...prev, e])
     setSelectedEquipmentId(e.id)
     setAddingEquip(false)
-    setNewEquipMake(''); setNewEquipMakeOther(''); setNewEquipModel(''); setNewEquipSerial(''); setNewEquipType('Mower')
+    setNewEquipMake(''); setNewEquipMakeOther(''); setAddMakeToList(true); setNewEquipModel(''); setNewEquipSerial(''); setNewEquipType('Mower')
   }
 
   async function handleSubmit() {
@@ -359,7 +367,13 @@ function NewWorkOrderForm() {
                         <option value="Other">Other (type below)</option>
                       </select>
                       {newEquipMake === 'Other' && (
-                        <Input className="mt-1" value={newEquipMakeOther} onChange={e => setNewEquipMakeOther(e.target.value)} placeholder="Type make name..." />
+                        <>
+                          <Input className="mt-1" value={newEquipMakeOther} onChange={e => setNewEquipMakeOther(e.target.value)} placeholder="Type make name..." />
+                          <label className="flex items-start gap-2 mt-1.5 text-xs text-gray-600 cursor-pointer">
+                            <input type="checkbox" checked={addMakeToList} onChange={e => setAddMakeToList(e.target.checked)} className="w-4 h-4 mt-0.5" />
+                            <span>Also add this make to the Make list so it shows up next time</span>
+                          </label>
+                        </>
                       )}
                     </div>
                     <div>

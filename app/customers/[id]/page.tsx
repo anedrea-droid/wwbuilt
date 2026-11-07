@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { resolveMake, sortMakes } from '@/lib/equipment-makes'
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { format, parseISO } from "date-fns"
@@ -63,6 +64,7 @@ export default function CustomerDetail() {
   const [newTypeOther, setNewTypeOther] = useState('')
   const [newMake, setNewMake] = useState('')
   const [newMakeOther, setNewMakeOther] = useState('')
+  const [addMakeToList, setAddMakeToList] = useState(true)
   const [editEquipMakeOther, setEditEquipMakeOther] = useState('')
   const [equipMakes, setEquipMakes] = useState<{id:string;name:string}[]>([])
   const [newModel, setNewModel] = useState('')
@@ -139,13 +141,19 @@ export default function CustomerDetail() {
     async function addEquipment() {
     if (!newMake.trim()) return
     setSaving(true)
+    let finalMake = newMake
+    if (newMake === 'Other') {
+      const r = await resolveMake(newMakeOther, equipMakes, addMakeToList)
+      finalMake = r.name
+      if (r.added) setEquipMakes(prev => sortMakes([...prev, r.added!]))
+    }
     await fetch('/api/equipment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: id, type: newType === 'Other' ? (newTypeOther.trim() || 'Other') : newType, make: newMake === 'Other' ? (newMakeOther.trim() || 'Other') : newMake, model: newModel, serialNumber: newSerial })
+      body: JSON.stringify({ customerId: id, type: newType === 'Other' ? (newTypeOther.trim() || 'Other') : newType, make: finalMake, model: newModel, serialNumber: newSerial })
     })
     setAddingEquip(false)
-    setNewMake(''); setNewMakeOther(''); setNewModel(''); setNewSerial(''); setNewType('Mower')
+    setNewMake(''); setNewMakeOther(''); setAddMakeToList(true); setNewModel(''); setNewSerial(''); setNewType('Mower')
     setSaving(false)
     await load()
   }
@@ -301,9 +309,15 @@ export default function CustomerDetail() {
                     {equipMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                     <option value="Other">Other (type below)</option>
                   </select>
-                  {newMake === 'Other' && (
-                    <Input className="mt-1" value={newMakeOther} onChange={e => setNewMakeOther(e.target.value)} placeholder="Type make name..." />
-                  )}
+                    {newMake === 'Other' && (
+                      <>
+                        <Input className="mt-1" value={newMakeOther} onChange={e => setNewMakeOther(e.target.value)} placeholder="Type make name..." />
+                        <label className="flex items-start gap-2 mt-1.5 text-xs text-gray-600 cursor-pointer">
+                          <input type="checkbox" checked={addMakeToList} onChange={e => setAddMakeToList(e.target.checked)} className="w-4 h-4 mt-0.5" />
+                          <span>Also add this make to the Make list so it shows up next time</span>
+                        </label>
+                      </>
+                    )}
                 </div>
                 <div>
                   <Label className="text-xs">Model</Label>
