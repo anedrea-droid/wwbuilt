@@ -11,6 +11,7 @@ const LINKS = [
   { href: '/shop-equipment', label: 'Shop Equipment' },
   { href: '/parts-inventory', label: 'Parts Inventory' },
   { href: '/reports', label: 'Reports' },
+  { href: '/reports/commission-owed', label: 'Shop Commission' },
   { href: '/settings', label: 'Settings' },
 ]
 
