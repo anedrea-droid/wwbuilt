@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
+import ByTechnicianReport from '@/components/by-technician-report'
 
 const PRINT_STYLES = '@media print { nav { display: none !important; } .print\\:hidden { display: none !important; } body { background: white !important; } }'
 
@@ -1787,6 +1788,8 @@ function ReportsPageInner() {
           </Section>
         </div>
       )}
+
+      {tab === 'admin' && <ByTechnicianReport />}
 
       {!loading && tab === 'admin' && (
         <div className="space-y-5">
